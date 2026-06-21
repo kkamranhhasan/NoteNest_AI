@@ -1,0 +1,147 @@
+<?php
+// verify_email.php
+require 'config.php';
+
+$message = '';
+$success = false;
+
+if (isset($_GET['token']) && !empty($_GET['token'])) {
+    $token = htmlspecialchars(trim($_GET['token']));
+
+    // Find user with this token
+    $stmt = $conn->prepare("SELECT id, name FROM users WHERE verification_token = ? AND is_verified = 0");
+    if ($stmt) {
+        $stmt->bind_param("s", $token);
+        $stmt->execute();
+        $stmt->store_result();
+
+        if ($stmt->num_rows == 1) {
+            $stmt->bind_result($user_id, $user_name);
+            $stmt->fetch();
+            $stmt->close();
+
+            // Mark as verified and clear token
+            $update = $conn->prepare("UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?");
+            if ($update) {
+                $update->bind_param("i", $user_id);
+                if ($update->execute()) {
+                    $success = true;
+                    $message = "Hi $user_name, তোমার email সফলভাবে verify হয়েছে! 🎉";
+                } else {
+                    $message = "কিছু একটা ভুল হয়েছে। আবার চেষ্টা করো।";
+                }
+                $update->close();
+            }
+        } else {
+            $stmt->close();
+            // Check if already verified
+            $check = $conn->prepare("SELECT id FROM users WHERE is_verified = 1 AND verification_token IS NULL AND id IN (SELECT id FROM users WHERE email IN (SELECT email FROM users))");
+            $message = "এই verification link টি invalid অথবা তোমার email আগেই verify হয়ে গেছে।";
+        }
+    } else {
+        $message = "Database error. Please try again.";
+    }
+} else {
+    $message = "Invalid verification link.";
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Email Verification - NoteNest</title>
+    <link rel="shortcut icon" href="img/fav.ico" type="image/x-icon">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #0b4954 0%, #197f8f 50%, #1a9aad 100%);
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
+        .card {
+            background: #fff;
+            border-radius: 20px;
+            padding: 56px 48px;
+            text-align: center;
+            max-width: 480px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes popIn {
+            from { opacity: 0; transform: scale(0.85) translateY(20px); }
+            to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .icon {
+            font-size: 72px;
+            margin-bottom: 20px;
+            animation: bounceIn 0.6s 0.2s both;
+        }
+        @keyframes bounceIn {
+            from { transform: scale(0); }
+            to   { transform: scale(1); }
+        }
+        h2 {
+            color: #0b4954;
+            font-size: 26px;
+            margin-bottom: 14px;
+        }
+        p {
+            color: #666;
+            font-size: 15px;
+            line-height: 1.7;
+            margin-bottom: 30px;
+        }
+        .btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #0b4954, #197f8f);
+            color: #fff;
+            text-decoration: none;
+            padding: 14px 36px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(11,73,84,0.3);
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(11,73,84,0.4);
+        }
+        .btn-outline {
+            display: inline-block;
+            margin-top: 12px;
+            color: #197f8f;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .brand {
+            font-size: 13px;
+            color: #bbb;
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <?php if ($success): ?>
+            <div class="icon">✅</div>
+            <h2>Email Verified!</h2>
+            <p><?php echo htmlspecialchars($message); ?><br>এখন তুমি NoteNest-এ Login করতে পারবে।</p>
+            <a href="login.php" class="btn"><i class="fas fa-arrow-right"></i> &nbsp;Login করো</a>
+        <?php else: ?>
+            <div class="icon">❌</div>
+            <h2>Verification Failed</h2>
+            <p><?php echo htmlspecialchars($message); ?></p>
+            <a href="login.php" class="btn">Login Page</a>
+            <br>
+            <a href="register.php" class="btn-outline">নতুন Account করো</a>
+        <?php endif; ?>
+        <p class="brand">📁 NoteNest</p>
+    </div>
+</body>
+</html>

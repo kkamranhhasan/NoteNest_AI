@@ -1,0 +1,48 @@
+# ============================================================
+# NoteNest — .gitignore
+# ============================================================
+
+# --- User uploaded files (don't push user data) ---
+uploads/notes/*
+uploads/recordings/*
+!uploads/notes/.gitkeep
+!uploads/recordings/.gitkeep
+
+# --- Profile photos ---
+img/user_photos/*
+!img/user_photos/.gitkeep
+
+# --- Config with sensitive info ---
+# (uncomment the line below if you want to hide your API key)
+# config.php
+
+# --- PHP / Server ---
+*.log
+*.cache
+.htpasswd
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Temporary files ---
+*.tmp
+*.bak
+
+# --- PHP sessions ---
+/tmp/
+
+# --- Database dumps (sensitive) ---
+# database/*.sql   # Comment this out if you WANT to push the SQL file
+
+# --- Environment / Secrets ---
+.env
+.env.local
