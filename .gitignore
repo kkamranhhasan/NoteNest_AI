@@ -12,9 +12,9 @@ uploads/recordings/*
 img/user_photos/*
 !img/user_photos/.gitkeep
 
-# --- Config with sensitive info ---
-# (uncomment the line below if you want to hide your API key)
-# config.php
+# --- Config with sensitive info (NEVER push to GitHub) ---
+config.php
+config.local.php
 
 # --- PHP / Server ---
 *.log
