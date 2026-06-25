@@ -19,7 +19,7 @@
 
 ---
 
-## ✨ Features
+
 
 ### 🤖 AI Features (Powered by Gemini 2.5 Flash)
 | Feature | Description |
