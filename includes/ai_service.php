@@ -2,55 +2,40 @@
 // ============================================================
 // includes/ai_service.php
 // NoteNest AI Platform — Core AI Service Layer
-// Connects to Google Gemini API via PHP cURL
+// Powered by Groq AI (OpenAI-compatible, Llama 3.3-70B)
 // ============================================================
 
-// ── Helper: Send request to Gemini API ───────────────────────
 /**
- * Core cURL function to call Gemini generateContent endpoint.
+ * Core cURL function to call xAI Grok chat completions endpoint.
  *
- * @param  array  $messages   Array of ['role'=>'user'|'model', 'text'=>'...']
- * @param  string $systemPrompt  System-level instruction for the AI
- * @param  float  $temperature   Creativity (0.0 = precise, 1.0 = creative)
+ * @param  array  $messages     OpenAI-style messages [['role'=>'user|assistant|system','content'=>'...']]
+ * @param  string $model        GROK_MODEL | GROK_MODEL_PRO
+ * @param  float  $temperature  Creativity (0.0 = precise, 1.0 = creative)
+ * @param  int    $maxTokens    Max output tokens
  * @return array  ['success'=>bool, 'text'=>string, 'tokens'=>int, 'error'=>string]
  */
-function geminiRequest(array $messages, string $systemPrompt = '', float $temperature = 0.7): array {
-    // Build the Gemini "contents" array
-    $contents = [];
-    foreach ($messages as $msg) {
-        $contents[] = [
-            'role'  => ($msg['role'] === 'assistant' || $msg['role'] === 'model') ? 'model' : 'user',
-            'parts' => [['text' => $msg['text']]]
-        ];
-    }
+function grokRequest(array $messages, string $model = '', float $temperature = 0.7, int $maxTokens = 0): array {
+    $model     = $model     ?: GROQ_MODEL;
+    $maxTokens = $maxTokens ?: AI_MAX_TOKENS;
 
-    // Build request payload
     $payload = [
-        'contents'         => $contents,
-        'generationConfig' => [
-            'maxOutputTokens' => AI_MAX_TOKENS,
-            'temperature'     => $temperature,
-        ]
+        'model'       => $model,
+        'messages'    => $messages,
+        'max_tokens'  => $maxTokens,
+        'temperature' => $temperature,
     ];
 
-    // Attach system instruction if provided
-    if (!empty($systemPrompt)) {
-        $payload['system_instruction'] = [
-            'parts' => [['text' => $systemPrompt]]
-        ];
-    }
-
-    $url = GEMINI_API_URL . '?key=' . GEMINI_API_KEY;
-
-    // cURL request
-    $ch = curl_init($url);
+    $ch = curl_init(GROQ_API_URL);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode($payload),
-        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-        CURLOPT_TIMEOUT        => 30,
-        CURLOPT_SSL_VERIFYPEER => false, // localhost-এ SSL skip
+        CURLOPT_POSTFIELDS     => json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE),
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . GROQ_API_KEY,
+        ],
+        CURLOPT_TIMEOUT        => 60,
+        CURLOPT_SSL_VERIFYPEER => false, // localhost XAMPP
     ]);
 
     $response  = curl_exec($ch);
@@ -58,46 +43,65 @@ function geminiRequest(array $messages, string $systemPrompt = '', float $temper
     $curlError = curl_error($ch);
     curl_close($ch);
 
-    // cURL-level error
     if ($curlError) {
         return ['success' => false, 'text' => '', 'tokens' => 0, 'error' => 'cURL error: ' . $curlError];
     }
 
     $data = json_decode($response, true);
 
-    // API-level error
     if ($httpCode !== 200 || isset($data['error'])) {
-        $errMsg = $data['error']['message'] ?? 'Unknown API error (HTTP ' . $httpCode . ')';
+        $errMsg = $data['error']['message'] ?? ('Unknown API error (HTTP ' . $httpCode . '). Response: ' . substr($response, 0, 300));
         return ['success' => false, 'text' => '', 'tokens' => 0, 'error' => $errMsg];
     }
 
-    // Extract response text
-    $text   = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
-    $tokens = $data['usageMetadata']['totalTokenCount'] ?? 0;
+    $text   = $data['choices'][0]['message']['content'] ?? '';
+    $tokens = $data['usage']['total_tokens'] ?? 0;
 
     return ['success' => true, 'text' => trim($text), 'tokens' => $tokens, 'error' => ''];
 }
 
+/**
+ * Backward-compatible wrapper: accepts old Gemini-style message format
+ * (['role'=>'user|model', 'text'=>'...']) and converts to OpenAI format.
+ * Used by pages that call geminiRequest() directly.
+ */
+function geminiRequest(array $messages, string $systemPrompt = '', float $temperature = 0.7): array {
+    $openAiMessages = [];
+
+    // Add system prompt first
+    if (!empty($systemPrompt)) {
+        $openAiMessages[] = ['role' => 'system', 'content' => $systemPrompt];
+    }
+
+    // Convert Gemini-style role names to OpenAI style
+    foreach ($messages as $msg) {
+        $role    = ($msg['role'] === 'model') ? 'assistant' : ($msg['role'] ?? 'user');
+        $content = $msg['text'] ?? $msg['content'] ?? '';
+        $openAiMessages[] = ['role' => $role, 'content' => $content];
+    }
+
+    return grokRequest($openAiMessages, GROQ_MODEL, $temperature);
+}
+
 
 // ============================================================
-// PUBLIC FUNCTIONS
+// PUBLIC FUNCTIONS  (all signatures unchanged)
 // ============================================================
 
 // ── 1. AI TUTOR CHAT ─────────────────────────────────────────
 /**
  * Sends a student question to the AI Tutor and gets an academic answer.
- * Maintains conversation context via $history array.
  *
  * @param  string $userMessage   The student's current question
- * @param  array  $history       Previous messages [['role'=>'user'|'assistant','text'=>'...']]
+ * @param  array  $history       Previous messages [['role'=>'user|assistant','text'=>'...']]
  * @param  string $courseContext Optional course name for contextual answers
  * @return array  ['success', 'text', 'tokens', 'error']
  */
 function aiChat(string $userMessage, array $history = [], string $courseContext = ''): array {
-    $systemPrompt = "You are an expert academic tutor assistant for university students. 
+    $systemContent = "You are an expert academic tutor assistant for university students powered by Grok AI.
 Your role is to:
 - Explain concepts clearly with examples
-- Break down complex topics step by step  
+- Break down complex topics step by step
 - Encourage critical thinking by asking follow-up questions
 - Provide study tips and mnemonics when helpful
 - Be supportive, patient, and encouraging
@@ -105,15 +109,21 @@ Your role is to:
 - Keep responses focused and academic in nature";
 
     if ($courseContext) {
-        $systemPrompt .= "\n\nThe student is currently studying: **{$courseContext}**. 
-Tailor your explanations to this subject when relevant.";
+        $systemContent .= "\n\nThe student is currently studying: **{$courseContext}**. Tailor your explanations to this subject when relevant.";
     }
 
-    // Build message chain: history + new message
-    $messages   = $history;
-    $messages[] = ['role' => 'user', 'text' => $userMessage];
+    $messages = [['role' => 'system', 'content' => $systemContent]];
 
-    return geminiRequest($messages, $systemPrompt, 0.6);
+    // Add conversation history
+    foreach ($history as $msg) {
+        $role     = ($msg['role'] === 'model') ? 'assistant' : ($msg['role'] ?? 'user');
+        $content  = $msg['text'] ?? $msg['content'] ?? '';
+        $messages[] = ['role' => $role, 'content' => $content];
+    }
+
+    $messages[] = ['role' => 'user', 'content' => $userMessage];
+
+    return grokRequest($messages, GROQ_MODEL, 0.6);
 }
 
 
@@ -127,14 +137,19 @@ Tailor your explanations to this subject when relevant.";
  * @return array  ['success', 'text', 'questions_json', 'tokens', 'error']
  */
 function aiGenerateQuestions(string $studyContent, string $questionTypes = '5 MCQ and 5 short answer', string $difficulty = 'medium'): array {
-    $systemPrompt = "You are an expert academic exam setter. Generate exam questions strictly in valid JSON format.";
-
-    $prompt = "Based on the following study material, generate exactly {$questionTypes} questions at {$difficulty} difficulty level.
+    $messages = [
+        [
+            'role'    => 'system',
+            'content' => 'You are an expert academic exam setter. Generate exam questions strictly in valid JSON format. Return ONLY raw JSON, no markdown fences, no explanation.',
+        ],
+        [
+            'role'    => 'user',
+            'content' => "Based on the following study material, generate exactly {$questionTypes} questions at {$difficulty} difficulty level.
 
 STUDY MATERIAL:
 {$studyContent}
 
-Return ONLY a valid JSON array with NO extra text, NO markdown, NO explanation. Format:
+Return ONLY a valid JSON array. Format:
 [
   {
     \"type\": \"mcq\",
@@ -149,12 +164,13 @@ Return ONLY a valid JSON array with NO extra text, NO markdown, NO explanation. 
     \"expected_keywords\": [\"keyword1\", \"keyword2\"],
     \"model_answer\": \"The ideal answer\"
   }
-]";
+]",
+        ],
+    ];
 
-    $result = geminiRequest([['role' => 'user', 'text' => $prompt]], $systemPrompt, 0.4);
+    $result = grokRequest($messages, GROQ_MODEL, 0.4, 3000);
 
     if ($result['success']) {
-        // Clean up response — strip markdown code fences if present
         $jsonText = preg_replace('/```json\s*|\s*```/', '', $result['text']);
         $jsonText = trim($jsonText);
         $decoded  = json_decode($jsonText, true);
@@ -162,8 +178,8 @@ Return ONLY a valid JSON array with NO extra text, NO markdown, NO explanation. 
         if (json_last_error() === JSON_ERROR_NONE) {
             $result['questions_json'] = $jsonText;
         } else {
-            $result['success'] = false;
-            $result['error']   = 'AI returned invalid JSON. Raw: ' . substr($result['text'], 0, 200);
+            $result['success']       = false;
+            $result['error']         = 'AI returned invalid JSON. Raw: ' . substr($result['text'], 0, 200);
             $result['questions_json'] = '[]';
         }
     }
@@ -174,19 +190,23 @@ Return ONLY a valid JSON array with NO extra text, NO markdown, NO explanation. 
 
 // ── 3. AI ANSWER EVALUATOR ───────────────────────────────────
 /**
- * Evaluates student answers against the AI-generated questions.
- * Returns a score, per-question feedback, weak areas, and study suggestions.
+ * Evaluates student answers against AI-generated questions.
  *
  * @param  string $questionsJson  JSON string of generated questions
  * @param  array  $studentAnswers ['q_index' => 'student answer text']
- * @return array  ['success', 'text', 'score', 'feedback_json', 'weak_areas', 'tokens', 'error']
+ * @return array  ['success', 'text', 'score', 'feedback_json', 'weak_areas', 'grade', 'tokens', 'error']
  */
 function aiEvaluateAnswers(string $questionsJson, array $studentAnswers): array {
-    $systemPrompt = "You are a strict but fair academic evaluator. Evaluate student answers objectively and provide constructive feedback. Always respond in valid JSON.";
-
     $answersFormatted = json_encode($studentAnswers, JSON_PRETTY_PRINT);
 
-    $prompt = "Evaluate the following student answers against the given questions.
+    $messages = [
+        [
+            'role'    => 'system',
+            'content' => 'You are a strict but fair academic evaluator. Evaluate student answers objectively and provide constructive feedback. Always respond with ONLY valid JSON, no markdown.',
+        ],
+        [
+            'role'    => 'user',
+            'content' => "Evaluate the following student answers against the given questions.
 
 QUESTIONS JSON:
 {$questionsJson}
@@ -194,7 +214,7 @@ QUESTIONS JSON:
 STUDENT ANSWERS (indexed by question number, 0-based):
 {$answersFormatted}
 
-Evaluate each answer and return ONLY a valid JSON object:
+Return ONLY a valid JSON object:
 {
   \"total_score\": 85,
   \"max_score\": 100,
@@ -212,9 +232,12 @@ Evaluate each answer and return ONLY a valid JSON object:
       \"feedback\": \"Detailed feedback\"
     }
   ]
-}";
+}",
+        ],
+    ];
 
-    $result = geminiRequest([['role' => 'user', 'text' => $prompt]], $systemPrompt, 0.3);
+    // Use the more powerful model for evaluation
+    $result = grokRequest($messages, GROQ_MODEL_PRO, 0.3, 4000);
 
     if ($result['success']) {
         $jsonText = preg_replace('/```json\s*|\s*```/', '', $result['text']);
@@ -238,10 +261,10 @@ Evaluate each answer and return ONLY a valid JSON object:
 
 // ── 4. AI CONTENT SUMMARIZER ─────────────────────────────────
 /**
- * Summarizes a long text into concise study notes.
+ * Summarizes long text into concise study notes.
  *
- * @param  string $content   Raw text to summarize
- * @param  string $style     "bullet_points" | "paragraph" | "flashcards"
+ * @param  string $content  Raw text to summarize
+ * @param  string $style    "bullet_points" | "paragraph" | "flashcards"
  * @return array  ['success', 'text', 'tokens', 'error']
  */
 function aiSummarize(string $content, string $style = 'bullet_points'): array {
@@ -252,30 +275,61 @@ function aiSummarize(string $content, string $style = 'bullet_points'): array {
     ];
     $styleInstruction = $styleInstructions[$style] ?? $styleInstructions['bullet_points'];
 
-    $prompt = "Summarize the following academic content for a student studying for exams.
+    $messages = [
+        [
+            'role'    => 'user',
+            'content' => "Summarize the following academic content for a student studying for exams.
 Style: {$styleInstruction}
 
 CONTENT:
 {$content}
 
-Provide a clear, structured summary that covers all important concepts.";
+Provide a clear, structured summary that covers all important concepts.",
+        ],
+    ];
 
-    return geminiRequest([['role' => 'user', 'text' => $prompt]], '', 0.5);
+    return grokRequest($messages, GROQ_MODEL, 0.5);
 }
 
 
-// ── 5. SAVE AI INTERACTION TO DB ─────────────────────────────
+// ── 5. AI STUDY RECOMMENDATIONS ──────────────────────────────
+/**
+ * Generates a personalized study plan based on user's exam history and weak areas.
+ *
+ * @param  array  $profile   User learning profile data
+ * @return array  ['success', 'text', 'tokens', 'error']
+ */
+function aiStudyRecommendations(array $profile): array {
+    $profileText = json_encode($profile, JSON_PRETTY_PRINT);
+
+    $messages = [
+        [
+            'role'    => 'system',
+            'content' => 'You are an expert academic advisor and study coach. Provide personalized, actionable study recommendations based on the student\'s performance data.',
+        ],
+        [
+            'role'    => 'user',
+            'content' => "Based on this student's learning profile, generate a personalized study plan:
+
+{$profileText}
+
+Provide:
+1. Top 3 priority topics to focus on (with specific study tips for each)
+2. A 7-day study schedule
+3. Recommended study techniques for their weak areas
+4. A motivational message
+
+Format your response clearly with sections and bullet points.",
+        ],
+    ];
+
+    return grokRequest($messages, GROQ_MODEL, 0.7);
+}
+
+
+// ── 6. SAVE AI INTERACTION TO DB ─────────────────────────────
 /**
  * Logs an AI interaction to the ai_chat_history table.
- *
- * @param  mysqli $conn
- * @param  int    $userId
- * @param  string $sessionId
- * @param  string $role       'user' | 'assistant'
- * @param  string $message
- * @param  string $type       'tutor' | 'exam_hint' | 'summary' | 'general'
- * @param  int    $courseId   Optional
- * @param  int    $tokens     Token count
  */
 function saveAiChat(mysqli $conn, int $userId, string $sessionId, string $role, string $message, string $type = 'tutor', int $courseId = 0, int $tokens = 0): void {
     $courseIdVal = $courseId > 0 ? $courseId : null;
@@ -289,20 +343,13 @@ function saveAiChat(mysqli $conn, int $userId, string $sessionId, string $role, 
 }
 
 
-// ── 6. LOG PROGRESS EVENT ────────────────────────────────────
+// ── 7. LOG PROGRESS EVENT ────────────────────────────────────
 /**
  * Records a user activity event in user_progress for analytics.
- *
- * @param  mysqli $conn
- * @param  int    $userId
- * @param  string $eventType  'file_upload'|'ai_chat'|'exam_taken'|'task_done'|'login'|'note_view'
- * @param  string $detail     Optional label
- * @param  int    $courseId   Optional
- * @param  float  $score      Optional score value
  */
 function logProgress(mysqli $conn, int $userId, string $eventType, string $detail = '', int $courseId = 0, float $score = 0.0): void {
     $courseIdVal = $courseId > 0 ? $courseId : null;
-    $scoreVal    = $score > 0    ? $score    : null;
+    $scoreVal    = $score   > 0 ? $score    : null;
     $stmt = $conn->prepare(
         "INSERT INTO user_progress (user_id, course_id, event_type, event_detail, score_value)
          VALUES (?, ?, ?, ?, ?)"

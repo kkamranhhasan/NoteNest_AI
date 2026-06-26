@@ -249,12 +249,44 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['rename_folder'])) {
         $stmt->execute(); $stmt->store_result();
         if ($stmt->num_rows > 0) {
             $_SESSION['folder_delete_error'] = "A folder with that name already exists here.";
+            $stmt->close();
         } else {
             $stmt->close();
+            // 1. Rename the folder itself
             $stmt = $conn->prepare("UPDATE folders SET name=? WHERE id=? AND owner_id=?");
             $stmt->bind_param('sii', $rename_name, $rename_folder_id, $user_id);
             $stmt->execute(); $stmt->close();
-            $_SESSION['success_msg'] = "Folder renamed!";
+            
+            // 2. Check if it is a course root folder, if so, update course name
+            $chkCourse = $conn->prepare("SELECT course_id FROM folders WHERE id=? AND is_course_root=1");
+            $chkCourse->bind_param('i', $rename_folder_id);
+            $chkCourse->execute();
+            $chkCourse->bind_result($c_id);
+            if ($chkCourse->fetch() && $c_id) {
+                $chkCourse->close();
+                // Strip out course code suffix if it exists, e.g. "Name (CODE)" -> just "Name"
+                // But it's simpler to just update the name to whatever they typed
+                $updC = $conn->prepare("UPDATE courses SET name=? WHERE id=?");
+                $updC->bind_param('si', $rename_name, $c_id);
+                $updC->execute(); $updC->close();
+            } else {
+                $chkCourse->close();
+                // 3. Check if it is a topic folder, if so, update topic title
+                $chkTopic = $conn->prepare("SELECT id FROM course_topics WHERE folder_id=?");
+                $chkTopic->bind_param('i', $rename_folder_id);
+                $chkTopic->execute();
+                $chkTopic->bind_result($t_id);
+                if ($chkTopic->fetch() && $t_id) {
+                    $chkTopic->close();
+                    $updT = $conn->prepare("UPDATE course_topics SET title=? WHERE id=?");
+                    $updT->bind_param('si', $rename_name, $t_id);
+                    $updT->execute(); $updT->close();
+                } else {
+                    $chkTopic->close();
+                }
+            }
+            
+            $_SESSION['success_msg'] = "Folder renamed successfully!";
         }
     }
     $_SESSION['history_flatten'] = true;
@@ -345,6 +377,25 @@ if (isset($_GET['delete_file']) && is_numeric($_GET['delete_file'])) {
 if (isset($_GET['delete_folder']) && is_numeric($_GET['delete_folder'])) {
     $folder_id = intval($_GET['delete_folder']);
     if (folder_belongs_to_user($conn, $folder_id, $user_id)) {
+        // Check if it is a linked Course Root or Topic Folder
+        $chkLinked = $conn->prepare("
+            SELECT f.is_course_root, t.id AS topic_id
+            FROM folders f
+            LEFT JOIN course_topics t ON t.folder_id = f.id
+            WHERE f.id = ?
+        ");
+        $chkLinked->bind_param('i', $folder_id);
+        $chkLinked->execute();
+        $resLinked = $chkLinked->get_result()->fetch_assoc();
+        $chkLinked->close();
+
+        if (!empty($resLinked['is_course_root']) || !empty($resLinked['topic_id'])) {
+            $_SESSION['folder_delete_error'] = "This is a Course/Topic folder. Please delete it from Course Management.";
+            $_SESSION['history_flatten'] = true;
+            header("Location: my_note_nest.php" . ($current_folder_id ? "?folder=$current_folder_id" : ""));
+            exit;
+        }
+
         $stmt = $conn->prepare("SELECT 1 FROM folders WHERE parent_folder_id=? AND owner_id=?");
         $stmt->bind_param('ii', $folder_id, $user_id);
         $stmt->execute(); $stmt->store_result();
@@ -373,42 +424,98 @@ if (isset($_GET['delete_folder']) && is_numeric($_GET['delete_folder'])) {
         }
     }
 }
-// --- LOAD FOLDERS AND FILES FOR OWNER ---
+// ── LOAD FOLDERS (with course metadata) ───────────────────────
+// Each folder row: [id, name, is_course_root, course_id, course_color, course_code]
 $folders = [];
 if ($current_folder_id === null) {
-    $stmt = $conn->prepare("SELECT id, name FROM folders WHERE owner_id=? AND parent_folder_id IS NULL ORDER BY name");
+    // Root view: all top-level folders, JOIN courses for course-root ones
+    $stmt = $conn->prepare(
+        "SELECT f.id, f.name, COALESCE(f.is_course_root,0) AS is_course_root,
+                f.course_id, COALESCE(c.color,'#6c757d') AS course_color,
+                COALESCE(c.code,'') AS course_code
+         FROM folders f
+         LEFT JOIN courses c ON f.course_id = c.id
+         WHERE f.owner_id = ? AND f.parent_folder_id IS NULL
+         ORDER BY f.is_course_root DESC, f.name ASC"
+    );
     $stmt->bind_param('i', $user_id);
 } else {
-    $stmt = $conn->prepare("SELECT id, name FROM folders WHERE owner_id=? AND parent_folder_id=? ORDER BY name");
+    // Sub-folder view: children of current folder, also carry course info
+    $stmt = $conn->prepare(
+        "SELECT f.id, f.name, COALESCE(f.is_course_root,0) AS is_course_root,
+                f.course_id, COALESCE(c.color,'#6c757d') AS course_color,
+                COALESCE(c.code,'') AS course_code
+         FROM folders f
+         LEFT JOIN courses c ON f.course_id = c.id
+         WHERE f.owner_id = ? AND f.parent_folder_id = ?
+         ORDER BY f.name ASC"
+    );
     $stmt->bind_param('ii', $user_id, $current_folder_id);
 }
 $stmt->execute();
-$stmt->bind_result($fid, $fname);
-while ($stmt->fetch()) $folders[] = [$fid, $fname];
+$res = $stmt->get_result();
+while ($row = $res->fetch_assoc()) $folders[] = $row;
 $stmt->close();
+
+// ── LOAD FILES ────────────────────────────────────────────────
 $files = [];
 if ($current_folder_id === null) {
-    $stmt = $conn->prepare("SELECT id, name, file_path, mime_type, created_at FROM files WHERE owner_id=? AND folder_id IS NULL ORDER BY created_at DESC");
+    $stmt = $conn->prepare(
+        "SELECT id, name, file_path, mime_type, created_at
+         FROM files WHERE owner_id=? AND folder_id IS NULL ORDER BY created_at DESC"
+    );
     $stmt->bind_param('i', $user_id);
 } else {
-    $stmt = $conn->prepare("SELECT id, name, file_path, mime_type, created_at FROM files WHERE owner_id=? AND folder_id=? ORDER BY created_at DESC");
+    $stmt = $conn->prepare(
+        "SELECT id, name, file_path, mime_type, created_at
+         FROM files WHERE owner_id=? AND folder_id=? ORDER BY created_at DESC"
+    );
     $stmt->bind_param('ii', $user_id, $current_folder_id);
 }
 $stmt->execute();
 $stmt->bind_result($nid, $nname, $npath, $nmime, $ncreated);
 while ($stmt->fetch()) $files[] = [$nid, $nname, $npath, $nmime, $ncreated];
 $stmt->close();
-// --- END LOAD FOLDERS/FILES ---
-// Get favorites for this user
-$fav_ids = ['file'=>[], 'folder'=>[]];
-$res = $conn->query("SELECT item_type, item_id FROM favorites WHERE user_id=$user_id");
-while ($row = $res->fetch_assoc()) $fav_ids[$row['item_type']][] = $row['item_id'];
-// Get shared status for items
-$shared_items = ['file'=>[], 'folder'=>[]];
-$res = $conn->query("SELECT item_type, item_id FROM shared_access WHERE item_id IN (SELECT id FROM files WHERE owner_id=$user_id UNION SELECT id FROM folders WHERE owner_id=$user_id)");
-while ($row = $res->fetch_assoc()) $shared_items[$row['item_type']][] = $row['item_id'];
-// --- Breadcrumbs ---
+
+// ── Breadcrumbs (needed before course-context lookup) ─────────
 $breadcrumbs = get_folder_path($conn, $current_folder_id, $user_id);
+
+// ── Course-context: which course (if any) are we browsing inside? ─
+$current_course_info = null;
+if ($current_folder_id !== null) {
+    // Check current folder itself
+    $ci = $conn->prepare(
+        "SELECT f.is_course_root, f.course_id, c.name AS cname, c.code, c.color, c.description
+         FROM folders f LEFT JOIN courses c ON f.course_id = c.id
+         WHERE f.id = ? AND f.owner_id = ?"
+    );
+    $ci->bind_param('ii', $current_folder_id, $user_id); $ci->execute();
+    $current_course_info = $ci->get_result()->fetch_assoc(); $ci->close();
+    // If not a course root itself, walk ancestors via breadcrumbs
+    if (empty($current_course_info['course_id'])) {
+        foreach (array_reverse($breadcrumbs) as $bc) {
+            $ca = $conn->prepare(
+                "SELECT f.is_course_root, f.course_id, c.name AS cname, c.code, c.color
+                 FROM folders f LEFT JOIN courses c ON f.course_id = c.id
+                 WHERE f.id = ? AND f.is_course_root = 1 AND f.owner_id = ?"
+            );
+            $ca->bind_param('ii', $bc['id'], $user_id); $ca->execute();
+            $ca_row = $ca->get_result()->fetch_assoc(); $ca->close();
+            if (!empty($ca_row['course_id'])) { $current_course_info = $ca_row; break; }
+        }
+    }
+}
+
+// Get favorites for this user
+$fav_ids = ['file' => [], 'folder' => []];
+$fav_res = $conn->query("SELECT item_type, item_id FROM favorites WHERE user_id=$user_id");
+while ($row = $fav_res->fetch_assoc()) $fav_ids[$row['item_type']][] = $row['item_id'];
+
+// Get shared status for items
+$shared_items = ['file' => [], 'folder' => []];
+$sh_res = $conn->query("SELECT item_type, item_id FROM shared_access WHERE item_id IN (SELECT id FROM files WHERE owner_id=$user_id UNION SELECT id FROM folders WHERE owner_id=$user_id)");
+while ($row = $sh_res->fetch_assoc()) $shared_items[$row['item_type']][] = $row['item_id'];
+
 if (isset($_SESSION['success_msg'])) {
     $modal_message = $_SESSION['success_msg'];
     unset($_SESSION['success_msg']);
@@ -440,6 +547,8 @@ if ($modal_message) {
     /* ── Enhanced Preview Modal ── */
     #previewModal .modal-dialog { max-width: 860px; }
     #previewModal .modal-content { border-radius: 16px; overflow: hidden; border: none; box-shadow: 0 20px 60px rgba(0,0,0,.18); }
+    /* ── Course Folder Cards hover ── */
+    .course-folder-card:hover { transform: translateY(-3px) !important; box-shadow: 0 8px 28px rgba(0,0,0,.13) !important; }
     #previewModal .modal-header { background: linear-gradient(135deg,#0b4954,#197f8f); color:#fff; padding:16px 22px; }
     #previewModal .modal-title { font-weight:700; font-size:1rem; }
     #previewModal .btn-close { filter:invert(1); }
@@ -552,47 +661,155 @@ if ($modal_message) {
       </div>
     </div>
     <div class="col-md-8">
+
+      <?php /* ── Course-context banner when browsing inside a course tree ── */
+      if ($current_course_info && !empty($current_course_info['course_id'])): ?>
+      <div class="d-flex align-items-center gap-3 mb-3 px-3 py-2 rounded-3"
+           style="background:<?php echo htmlspecialchars($current_course_info['color']); ?>22;
+                  border-left:4px solid <?php echo htmlspecialchars($current_course_info['color']); ?>;">
+        <i class="fas fa-graduation-cap fa-lg" style="color:<?php echo htmlspecialchars($current_course_info['color']); ?>;"></i>
+        <div style="flex:1;">
+          <div style="font-weight:700;color:#2c3e50;font-size:.95rem;">
+            <?php echo htmlspecialchars($current_course_info['cname'] ?? ''); ?>
+            <span class="badge ms-1" style="background:<?php echo htmlspecialchars($current_course_info['color']); ?>;color:#fff;font-size:.72rem;border-radius:8px;">
+              <?php echo htmlspecialchars($current_course_info['code'] ?? ''); ?>
+            </span>
+          </div>
+          <div style="font-size:.78rem;color:#888;">Course materials folder</div>
+        </div>
+        <a href="course_management.php" class="btn btn-sm"
+           style="background:<?php echo htmlspecialchars($current_course_info['color']); ?>;color:#fff;border-radius:8px;font-size:.8rem;">
+          <i class="fas fa-external-link-alt me-1"></i>Manage Course
+        </a>
+      </div>
+      <?php endif; ?>
+
       <!-- FOLDERS HEADING -->
       <div class="section-heading mb-2">
-        <i class="fas fa-folder-open"></i> Folders
+        <i class="fas fa-folder-open"></i>
+        <?php echo $current_folder_id === null ? 'My Folders &amp; Courses' : 'Subfolders'; ?>
       </div>
-      <!-- SUBFOLDER LIST -->
+
+      <!-- FOLDER LIST — course-roots rendered as cards, regular as list items -->
       <?php if(empty($folders)): ?>
-        <p class="text-muted">No subfolders here.</p>
-      <?php else: ?>
+        <p class="text-muted">No folders here.</p>
+      <?php else:
+        // Separate course-root folders from regular folders
+        $course_root_folders = array_filter($folders, fn($f) => !empty($f['is_course_root']));
+        $regular_folders     = array_filter($folders, fn($f)  => empty($f['is_course_root']));
+      ?>
+
+      <?php /* ── Course Root Folders — grid cards ── */
+      if (!empty($course_root_folders) && $current_folder_id === null): ?>
+        <div class="mb-2" style="font-size:.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.6px;">
+          <i class="fas fa-graduation-cap me-1"></i>Courses (<?php echo count($course_root_folders); ?>)
+        </div>
+        <div class="row g-3 mb-4">
+          <?php foreach($course_root_folders as $f): ?>
+          <div class="col-sm-6 col-lg-4">
+            <div class="card h-100 border-0 shadow-sm course-folder-card"
+                 style="border-radius:14px;overflow:hidden;transition:transform .18s,box-shadow .18s;cursor:pointer;"
+                 onclick="location.href='my_note_nest.php?folder=<?php echo $f['id']; ?>'">
+              <!-- Coloured header bar -->
+              <div style="background:<?php echo htmlspecialchars($f['course_color']); ?>;height:8px;"></div>
+              <div class="card-body py-3 px-3">
+                <div class="d-flex align-items-start gap-2">
+                  <div class="flex-shrink-0 d-flex align-items-center justify-content-center rounded-2"
+                       style="width:38px;height:38px;background:<?php echo htmlspecialchars($f['course_color']); ?>22;">
+                    <i class="fas fa-graduation-cap" style="color:<?php echo htmlspecialchars($f['course_color']); ?>;font-size:1.1rem;"></i>
+                  </div>
+                  <div style="flex:1;min-width:0;">
+                    <div class="fw-bold text-truncate" style="font-size:.9rem;color:#2c3e50;">
+                      <?php echo htmlspecialchars($f['name']); ?>
+                    </div>
+                    <?php if($f['course_code']): ?>
+                    <span class="badge" style="background:<?php echo htmlspecialchars($f['course_color']); ?>;color:#fff;font-size:.68rem;border-radius:6px;">
+                      <?php echo htmlspecialchars($f['course_code']); ?>
+                    </span>
+                    <?php endif; ?>
+                  </div>
+                </div>
+              </div>
+              <!-- Action bar -->
+              <div class="card-footer bg-transparent border-0 py-2 px-3 d-flex justify-content-between align-items-center"
+                   style="border-top:1px solid #f0f2f5!important;" onclick="event.stopPropagation();">
+                <a href="my_note_nest.php?folder=<?php echo $f['id']; ?>" class="btn btn-sm"
+                   style="background:<?php echo htmlspecialchars($f['course_color']); ?>22;color:<?php echo htmlspecialchars($f['course_color']); ?>;border-radius:8px;font-size:.78rem;font-weight:600;">
+                  <i class="fas fa-folder-open me-1"></i>Open
+                </a>
+                <div class="d-flex gap-1">
+                  <a href="#" class="btn btn-sm btn-outline-warning favorite-btn"
+                     data-type="folder" data-id="<?php echo $f['id']; ?>"
+                     data-fav="<?php echo in_array($f['id'], $fav_ids['folder']) ? 1 : 0; ?>" title="Favorite">
+                    <i class="fa<?php echo in_array($f['id'], $fav_ids['folder']) ? 's' : 'r'; ?> fa-star"></i>
+                  </a>
+                  <?php if (in_array($f['id'], $shared_items['folder'])): ?>
+                  <a href="#" class="btn btn-sm btn-outline-success shared-status-btn"
+                     data-type="folder" data-id="<?php echo $f['id']; ?>" title="Manage Sharing">
+                    <i class="fas fa-users"></i>
+                  </a>
+                  <?php endif; ?>
+                  <a href="#" class="btn btn-sm btn-outline-info share-btn"
+                     data-type="folder" data-id="<?php echo $f['id']; ?>" title="Share">
+                    <i class="fa fa-share"></i>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+
+      <?php /* ── Regular Folders — list group ── */
+      if (!empty($regular_folders)): ?>
+        <?php if (!empty($course_root_folders) && $current_folder_id === null): ?>
+        <div class="mb-2" style="font-size:.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.6px;">
+          <i class="fas fa-folder me-1"></i>My Folders
+        </div>
+        <?php endif; ?>
         <ul class="list-group folder-list-group mb-3">
-          <?php foreach($folders as $f): ?>
+          <?php foreach($regular_folders as $f): ?>
             <li class="list-group-item d-flex align-items-center justify-content-between">
               <div>
-                <a href="my_note_nest.php?folder=<?= $f[0] ?>" class="folder-link">
-                  <i class="fa fa-folder folder-icon"></i><?= htmlspecialchars($f[1]) ?>
+                <a href="my_note_nest.php?folder=<?php echo $f['id']; ?>" class="folder-link">
+                  <i class="fa fa-folder folder-icon"></i><?php echo htmlspecialchars($f['name']); ?>
                 </a>
               </div>
               <div>
-                <button type="button" 
+                <button type="button"
                   class="btn btn-sm btn-outline-primary folder-action-btn me-1 rename-folder-btn"
-                  data-id="<?= $f[0] ?>" data-name="<?= htmlspecialchars($f[1]) ?>" title="Rename">
+                  data-id="<?php echo $f['id']; ?>" data-name="<?php echo htmlspecialchars($f['name']); ?>" title="Rename">
                   <i class="fas fa-pen"></i>
                 </button>
-                <a href="my_note_nest.php?delete_folder=<?= $f[0] ?>"
+                <a href="my_note_nest.php?delete_folder=<?php echo $f['id']; ?>"
                    onclick="return confirm('Delete this folder? Folder must be empty!');"
-                    class="btn btn-sm btn-outline-danger folder-action-btn" title="Delete Folder">
-                    <i class="fas fa-trash"></i>
+                   class="btn btn-sm btn-outline-danger folder-action-btn" title="Delete Folder">
+                  <i class="fas fa-trash"></i>
                 </a>
-                <a href="#" class="btn btn-sm btn-outline-warning me-1 favorite-btn" data-type="folder" data-id="<?= $f[0] ?>" data-fav="<?= in_array($f[0], $fav_ids['folder']) ? 1 : 0 ?>" title="Favorite">
-                  <i class="fa<?= in_array($f[0], $fav_ids['folder']) ? 's' : 'r' ?> fa-star"></i>
+                <a href="#" class="btn btn-sm btn-outline-warning me-1 favorite-btn"
+                   data-type="folder" data-id="<?php echo $f['id']; ?>"
+                   data-fav="<?php echo in_array($f['id'], $fav_ids['folder']) ? 1 : 0; ?>" title="Favorite">
+                  <i class="fa<?php echo in_array($f['id'], $fav_ids['folder']) ? 's' : 'r'; ?> fa-star"></i>
                 </a>
-                                 <?php if (in_array($f[0], $shared_items['folder'])): ?>
-                   <a href="#" class="btn btn-sm btn-outline-success me-1 shared-status-btn" data-type="folder" data-id="<?= $f[0] ?>" title="Manage Sharing">
-                     <i class="fas fa-users"></i>
-                   </a>
-                 <?php endif; ?>
-                 <a href="#" class="btn btn-sm btn-outline-info share-btn" data-type="folder" data-id="<?= $f[0] ?>" title="Share"><i class="fa fa-share"></i></a>
+                <?php if (in_array($f['id'], $shared_items['folder'])): ?>
+                <a href="#" class="btn btn-sm btn-outline-success me-1 shared-status-btn"
+                   data-type="folder" data-id="<?php echo $f['id']; ?>" title="Manage Sharing">
+                  <i class="fas fa-users"></i>
+                </a>
+                <?php endif; ?>
+                <a href="#" class="btn btn-sm btn-outline-info share-btn"
+                   data-type="folder" data-id="<?php echo $f['id']; ?>" title="Share">
+                  <i class="fa fa-share"></i>
+                </a>
               </div>
             </li>
           <?php endforeach; ?>
         </ul>
       <?php endif; ?>
+
+      <?php endif; /* end if not empty($folders) */ ?>
+
       <!-- NOTES HEADING -->
       <div class="section-heading mb-2" style="margin-top:32px;">
         <i class="fas fa-note-sticky"></i> Notes<?= ($current_folder_id !== null)? ' in "' . htmlspecialchars(end($breadcrumbs)['name']) . '"' : '' ?>

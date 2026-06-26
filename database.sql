@@ -43,27 +43,34 @@ CREATE TABLE IF NOT EXISTS courses (
   UNIQUE KEY unique_course_per_user (user_id, code)
 );
 
--- ── 4. Course Topics (Syllabus) ───────────────────────────────
-CREATE TABLE IF NOT EXISTS course_topics (
-  id         INT AUTO_INCREMENT PRIMARY KEY,
-  course_id  INT NOT NULL,
-  title      VARCHAR(255) NOT NULL,
-  week_no    INT DEFAULT NULL,
-  sort_order INT DEFAULT 0,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
-);
-
--- ── 5. Folders ────────────────────────────────────────────────
+-- ── 4. Folders ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS folders (
   id               INT AUTO_INCREMENT PRIMARY KEY,
   name             VARCHAR(255) NOT NULL,
   owner_id         INT NOT NULL,
+  course_id        INT DEFAULT NULL,
+  is_course_root   TINYINT(1) DEFAULT 0,
   is_shared        TINYINT(1) DEFAULT 0,
   parent_folder_id INT DEFAULT NULL,
   created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (owner_id)         REFERENCES users(id)   ON DELETE CASCADE,
-  FOREIGN KEY (parent_folder_id) REFERENCES folders(id) ON DELETE SET NULL
+  FOREIGN KEY (course_id)        REFERENCES courses(id) ON DELETE SET NULL,
+  FOREIGN KEY (parent_folder_id) REFERENCES folders(id) ON DELETE SET NULL,
+  INDEX idx_folder_course (course_id),
+  INDEX idx_folder_root (is_course_root, owner_id)
+);
+
+-- ── 5. Course Topics (Syllabus) ───────────────────────────────
+CREATE TABLE IF NOT EXISTS course_topics (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  course_id  INT NOT NULL,
+  folder_id  INT DEFAULT NULL,
+  title      VARCHAR(255) NOT NULL,
+  week_no    INT DEFAULT NULL,
+  sort_order INT DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+  FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL
 );
 
 -- ── 6. Files ──────────────────────────────────────────────────
@@ -71,13 +78,16 @@ CREATE TABLE IF NOT EXISTS files (
   id         INT AUTO_INCREMENT PRIMARY KEY,
   folder_id  INT,
   owner_id   INT NOT NULL,
+  course_id  INT DEFAULT NULL,
   name       VARCHAR(255) NOT NULL,
   file_path  VARCHAR(255) NOT NULL,
   mime_type  VARCHAR(100),
   is_shared  TINYINT(1) DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL,
-  FOREIGN KEY (owner_id)  REFERENCES users(id)   ON DELETE CASCADE
+  FOREIGN KEY (owner_id)  REFERENCES users(id)   ON DELETE CASCADE,
+  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL,
+  INDEX idx_file_course (course_id)
 );
 
 -- ── 7. File → Course/Topic Tags ───────────────────────────────

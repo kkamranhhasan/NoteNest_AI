@@ -51,8 +51,11 @@ if (!isset($_SESSION['user_id'])) {
         <a class="btn btn-link nav-ai-link" href="lecture_recorder.php" title="Recorder">
             <i class="fas fa-microphone"></i> Recorder
         </a>
-        <a class="btn btn-link support-link" href="#" title="Support">
-            <i class="fas fa-life-ring"></i> Support
+        <a class="btn btn-link nav-ai-link" href="progress_analytics.php" title="Analytics" style="color:#8e44ad !important;">
+            <i class="fas fa-chart-line"></i> Analytics
+        </a>
+        <a class="btn btn-link nav-ai-link" href="study_recommendations.php" title="Study Plan" style="color:#e67e22 !important;">
+            <i class="fas fa-lightbulb"></i> Study Plan
         </a>
         <a class="btn btn-link text-danger logout-link" href="logout.php" title="Logout">
             <i class="fas fa-right-from-bracket"></i> Logout

@@ -234,7 +234,10 @@ logProgress($conn, $user_id, 'login', 'Dashboard visit');
                 <i class="fas fa-bolt me-1"></i><?php echo $stats['ai_chats']; ?> AI interactions
             </p>
         </div>
-        <a href="profile.php" class="welcome-edit-btn"><i class="fas fa-pen me-1"></i>Edit Profile</a>
+        <a href="profile.php" class="welcome-edit-btn" style="align-self:flex-start; margin-right: 10px;"><i class="fas fa-pen me-1"></i>Edit Profile</a>
+        <button onclick="syncStorage()" class="welcome-edit-btn" style="align-self:flex-start; background: #e67e22; border-color: #e67e22;" id="btnSyncStorage">
+            <i class="fas fa-sync-alt me-1"></i>Sync Storage & DB
+        </button>
     </div>
 
     <!-- ── Quick Stats ── -->
@@ -315,14 +318,28 @@ logProgress($conn, $user_id, 'login', 'Dashboard visit');
                     <a href="ai_exam.php" class="ai-feature-card" style="background:linear-gradient(135deg,#8e44ad,#9b59b6);">
                         <div class="ai-icon">🧠</div>
                         <h6>AI Exam</h6>
-                        <p>Generate & evaluate questions</p>
+                        <p>Generate &amp; evaluate questions</p>
                     </a>
                 </div>
                 <div class="col-md-4">
                     <a href="course_management.php" class="ai-feature-card" style="background:linear-gradient(135deg,#e67e22,#f39c12);">
                         <div class="ai-icon">📚</div>
                         <h6>Courses</h6>
-                        <p>Manage syllabus & topics</p>
+                        <p>Manage syllabus &amp; topics</p>
+                    </a>
+                </div>
+                <div class="col-md-6">
+                    <a href="progress_analytics.php" class="ai-feature-card" style="background:linear-gradient(135deg,#6c3483,#8e44ad);">
+                        <div class="ai-icon">📊</div>
+                        <h6>Learning Analytics</h6>
+                        <p>Track progress, scores &amp; activity heatmap</p>
+                    </a>
+                </div>
+                <div class="col-md-6">
+                    <a href="study_recommendations.php" class="ai-feature-card" style="background:linear-gradient(135deg,#1a6e32,#27ae60);">
+                        <div class="ai-icon">🎯</div>
+                        <h6>Study Recommendations</h6>
+                        <p>AI-personalized learning plan &amp; weekly schedule</p>
                     </a>
                 </div>
             </div>
@@ -509,7 +526,30 @@ new Chart(document.getElementById('scoresChart'), {
         }
     }
 });
+});
 <?php endif; ?>
+
+// ── Storage Sync Function ─────────────────────────────────────
+function syncStorage() {
+    const btn = $('#btnSyncStorage');
+    const originalText = btn.html();
+    btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Syncing...');
+    
+    $.post('sync_storage_ajax.php', { action: 'sync_storage' }, function(res) {
+        if (res.success) {
+            let msg = "Sync Complete!\n\n";
+            msg += "Fixed Orphaned DB Rows: " + res.deleted_db_rows + "\n";
+            msg += "Deleted Orphaned Files: " + res.deleted_physical_files;
+            alert(msg);
+        } else {
+            alert('Sync failed: ' + (res.message || 'Unknown error'));
+        }
+    }, 'json').fail(function() {
+        alert('Network error while syncing.');
+    }).always(function() {
+        btn.prop('disabled', false).html(originalText);
+    });
+}
 </script>
 </body>
 </html>

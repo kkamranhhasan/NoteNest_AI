@@ -15,22 +15,67 @@ function extractFileText(string $filePath, string $mimeType): string {
     $fullPath = __DIR__ . '/' . ltrim($filePath, '/');
     if (!file_exists($fullPath)) return '';
 
-    // Plain text files
-    $textTypes = ['text/plain','text/markdown','text/html','text/csv',
-                  'application/json','text/x-python','text/x-java-source'];
-    if (in_array($mimeType, $textTypes) || str_ends_with($filePath, '.txt')
-        || str_ends_with($filePath, '.md') || str_ends_with($filePath, '.csv')) {
-        return mb_substr(file_get_contents($fullPath), 0, 6000);
-    }
+    $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+    $rawText = '';
 
-    // PDF — try pdftotext (available on most systems)
-    if ($mimeType === 'application/pdf' || str_ends_with($filePath, '.pdf')) {
+    // 1. DOCX files
+    if ($ext === 'docx' || strpos($mimeType, 'wordprocessingml') !== false) {
+        $zip = new ZipArchive();
+        if ($zip->open($fullPath)) {
+            if (($index = $zip->locateName('word/document.xml')) !== false) {
+                $data = $zip->getFromIndex($index);
+                $rawText = strip_tags($data);
+            }
+            $zip->close();
+        }
+    }
+    // 2. Plain text / RTF / HTML files
+    elseif (in_array($mimeType, ['text/plain','text/markdown','text/html','text/csv','text/rtf','application/json','text/x-python','text/x-java-source']) || in_array($ext, ['txt','md','csv','rtf'])) {
+        $content = @file_get_contents($fullPath);
+        if ($ext === 'rtf' || $mimeType === 'text/rtf') {
+            $content = preg_replace('/\\\\[a-z0-9-]+\s?/i', ' ', $content);
+            $content = preg_replace('/[{}]/', '', $content);
+        }
+        $rawText = strip_tags((string)$content);
+    }
+    // 3. PDF files
+    elseif ($ext === 'pdf' || $mimeType === 'application/pdf') {
         $escaped = escapeshellarg($fullPath);
         $text = shell_exec("pdftotext $escaped - 2>/dev/null");
-        if ($text) return mb_substr(trim($text), 0, 6000);
+        if ($text) {
+            $rawText = $text;
+        } else {
+            // Pure PHP Fallback
+            $infile = @file_get_contents($fullPath);
+            if (!empty($infile)) {
+                $texts = [];
+                preg_match_all("/stream(.*?)endstream/is", $infile, $matches);
+                foreach ($matches[1] as $match) {
+                    $data = @gzuncompress(trim($match));
+                    if ($data) {
+                        preg_match_all('/\((.*?)\)\s*T[jJ]/is', $data, $tj2);
+                        if (!empty($tj2[1])) {
+                            foreach ($tj2[1] as $str) {
+                                $texts[] = preg_replace('/\\\\./', '', $str);
+                            }
+                        }
+                    }
+                }
+                $rawText = implode(" ", $texts);
+            }
+        }
     }
 
-    return ''; // unsupported — user must paste text
+    if (empty(trim($rawText))) {
+        return '';
+    }
+
+    // SANITIZE: Convert to valid UTF-8, remove unprintable control characters, and truncate.
+    // This prevents the "failed to unmarshal JSON" error from Groq.
+    $safeText = mb_convert_encoding($rawText, 'UTF-8', 'UTF-8');
+    $safeText = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', ' ', $safeText);
+    
+    return mb_substr(trim($safeText), 0, 6000);
 }
 
 // ── AJAX HANDLERS ─────────────────────────────────────────────
@@ -188,13 +233,42 @@ $fq->execute();
 $files = $fq->get_result()->fetch_all(MYSQLI_ASSOC);
 $fq->close();
 
-// Courses
+// Courses with topics and their files
 $courses = [];
 $cq = $conn->prepare("SELECT id, name, code, color FROM courses WHERE user_id=? ORDER BY code");
 $cq->bind_param('i', $user_id);
 $cq->execute();
-$courses = $cq->get_result()->fetch_all(MYSQLI_ASSOC);
+$courseRows = $cq->get_result()->fetch_all(MYSQLI_ASSOC);
 $cq->close();
+
+foreach ($courseRows as $cr) {
+    // topics for this course
+    $tq = $conn->prepare("SELECT id, title, week_no, folder_id FROM course_topics WHERE course_id=? ORDER BY sort_order");
+    $tq->bind_param('i', $cr['id']); $tq->execute();
+    $cr['topics'] = $tq->get_result()->fetch_all(MYSQLI_ASSOC);
+    $tq->close();
+    // files for each topic
+    foreach ($cr['topics'] as &$tp) {
+        if ($tp['folder_id']) {
+            $ffq = $conn->prepare("SELECT id, name, file_path, mime_type FROM files WHERE folder_id=? AND owner_id=? ORDER BY created_at DESC");
+            $ffq->bind_param('ii', $tp['folder_id'], $user_id); $ffq->execute();
+            $tp['files'] = $ffq->get_result()->fetch_all(MYSQLI_ASSOC);
+            $ffq->close();
+        } else {
+            // fallback: files tagged to course+topic
+            $ffq = $conn->prepare(
+                "SELECT f.id, f.name, f.file_path, f.mime_type
+                 FROM file_course_tags fct JOIN files f ON fct.file_id=f.id
+                 WHERE fct.course_id=? AND fct.topic_id=? AND f.owner_id=?"
+            );
+            $ffq->bind_param('iii', $cr['id'], $tp['id'], $user_id); $ffq->execute();
+            $tp['files'] = $ffq->get_result()->fetch_all(MYSQLI_ASSOC);
+            $ffq->close();
+        }
+    }
+    unset($tp);
+    $courses[] = $cr;
+}
 
 // File icon helper
 function fileIcon(string $mime): string {
@@ -477,6 +551,18 @@ function fileIcon(string $mime): string {
                 <div class="card-panel">
                     <h5><i class="fas fa-folder-open me-2"></i>Select Study Material</h5>
 
+                    <!-- Tab Toggle -->
+                    <div class="d-flex gap-2 mb-3">
+                        <button class="opt-btn selected" id="tabAllFiles" onclick="switchTab('all')">
+                            <i class="fas fa-file me-1"></i>All Files
+                        </button>
+                        <button class="opt-btn" id="tabByTopic" onclick="switchTab('topic')">
+                            <i class="fas fa-graduation-cap me-1"></i>By Course & Topic
+                        </button>
+                    </div>
+
+                    <!-- Tab: All Files -->
+                    <div id="panelAllFiles">
                     <?php if (empty($files)): ?>
                     <div class="text-center py-4 text-muted">
                         <i class="fas fa-cloud-upload-alt fa-3x mb-3" style="color:#ddd;"></i>
@@ -496,6 +582,66 @@ function fileIcon(string $mime): string {
                         <?php endforeach; ?>
                     </div>
                     <?php endif; ?>
+                    </div>
+
+                    <!-- Tab: By Course & Topic -->
+                    <div id="panelByTopic" style="display:none;">
+                    <?php if (empty($courses)): ?>
+                    <div class="text-center py-4 text-muted">
+                        <i class="fas fa-graduation-cap fa-3x mb-3" style="color:#ddd;"></i>
+                        <p>No courses yet. <a href="course_management.php">Create a course first.</a></p>
+                    </div>
+                    <?php else: ?>
+                    <?php foreach ($courses as $cr): ?>
+                    <div class="mb-3">
+                        <!-- Course header -->
+                        <div style="background:<?php echo htmlspecialchars($cr['color']); ?>;color:#fff;border-radius:10px 10px 0 0;padding:8px 14px;font-weight:700;font-size:.88rem;display:flex;align-items:center;gap:8px;">
+                            <i class="fas fa-graduation-cap"></i>
+                            <?php echo htmlspecialchars($cr['code'].' — '.$cr['name']); ?>
+                        </div>
+                        <?php if (empty($cr['topics'])): ?>
+                        <div style="background:#f8fbfc;border:1px solid #e0eaee;border-top:none;border-radius:0 0 10px 10px;padding:12px 14px;font-size:.82rem;color:#bbb;">
+                            No topics yet.
+                        </div>
+                        <?php else: ?>
+                        <?php foreach ($cr['topics'] as $tp): ?>
+                        <div style="background:#f8fbfc;border:1px solid #e0eaee;border-top:none;border-radius:0;">
+                            <!-- Topic row -->
+                            <div style="padding:7px 14px;border-bottom:1px dashed #e8edf2;font-size:.8rem;font-weight:700;color:#555;display:flex;align-items:center;gap:6px;">
+                                <i class="fas fa-folder" style="color:<?php echo htmlspecialchars($cr['color']); ?>;font-size:.85rem;"></i>
+                                <?php echo htmlspecialchars($tp['title']); ?>
+                                <?php if ($tp['week_no']): ?>
+                                <span style="font-size:.7rem;background:#eef2f7;color:var(--accent);padding:1px 7px;border-radius:10px;font-weight:600;">Week <?php echo $tp['week_no']; ?></span>
+                                <?php endif; ?>
+                            </div>
+                            <?php if (empty($tp['files'])): ?>
+                            <div style="padding:8px 24px;font-size:.78rem;color:#bbb;">
+                                <i class="fas fa-cloud-upload-alt me-1"></i>No files in this topic.
+                                <a href="course_management.php" style="font-size:.75rem;">Upload now</a>
+                            </div>
+                            <?php else: ?>
+                            <?php foreach ($tp['files'] as $tf): ?>
+                            <div class="d-flex align-items-center gap-2" style="padding:7px 24px;border-bottom:1px solid #f0f2f5;cursor:pointer;transition:background .12s;"
+                                 data-id="<?php echo $tf['id']; ?>"
+                                 data-name="<?php echo htmlspecialchars($tf['name']); ?>"
+                                 data-mime="<?php echo htmlspecialchars($tf['mime_type'] ?? ''); ?>"
+                                 onclick="selectTopicFile(this, <?php echo $cr['id']; ?>)"
+                                 id="tf-row-<?php echo $tf['id']; ?>">
+                                <i class="fas <?php echo fileIcon($tf['mime_type'] ?? ''); ?>" style="font-size:1rem;"></i>
+                                <span style="font-size:.82rem;font-weight:600;color:#2c3e50;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?php echo htmlspecialchars($tf['name']); ?></span>
+                                <i class="fas fa-check-circle text-success tf-check" id="tf-check-<?php echo $tf['id']; ?>" style="display:none;"></i>
+                            </div>
+                            <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                        <?php endforeach; ?>
+                        <div style="height:6px;background:#f8fbfc;border:1px solid #e0eaee;border-top:none;border-radius:0 0 10px 10px;"></div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                    </div>
+
                 </div>
 
                 <!-- Manual Text Input -->
@@ -647,11 +793,45 @@ $(document).ready(function() {
     loadHistory();
 });
 
-// ── File selection ────────────────────────────────────────────
+// ── Tab switcher (All Files / By Course & Topic) ─────────────
+function switchTab(tab) {
+    if (tab === 'all') {
+        $('#panelAllFiles').show(); $('#panelByTopic').hide();
+        $('#tabAllFiles').addClass('selected'); $('#tabByTopic').removeClass('selected');
+    } else {
+        $('#panelAllFiles').hide(); $('#panelByTopic').show();
+        $('#tabAllFiles').removeClass('selected'); $('#tabByTopic').addClass('selected');
+        // Deselect any file from all-files grid
+        $('.file-card').removeClass('selected');
+    }
+}
+
+// ── File selection (All Files tab) ───────────────────────────
 function selectFile(el) {
     $('.file-card').removeClass('selected');
+    // Deselect topic tab
+    $('.tf-check').hide();
     $(el).addClass('selected');
     selectedFileId = parseInt($(el).data('id'));
+    $('#examCourse').val('0');
+}
+
+// ── File selection (Course/Topic tab) ────────────────────────
+function selectTopicFile(el, courseId) {
+    const fileId = parseInt(el.dataset.id);
+    // Clear all-files selection
+    $('.file-card').removeClass('selected');
+    // Clear other topic selections
+    $('.tf-check').hide();
+    $('[id^="tf-row-"]').css('background','');
+
+    // Highlight this row
+    $(el).css('background','#e4f2f6');
+    $(`#tf-check-${fileId}`).show();
+
+    selectedFileId = fileId;
+    // Auto-select the course in exam config
+    if (courseId) $('#examCourse').val(courseId);
 }
 
 // ── Difficulty ────────────────────────────────────────────────
