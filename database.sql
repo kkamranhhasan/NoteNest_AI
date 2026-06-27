@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
   photo              VARCHAR(255) DEFAULT 'img/user.png',
   is_verified        TINYINT(1)   DEFAULT 0,
   verification_token VARCHAR(64)  DEFAULT NULL,
+  token_created_at   DATETIME     DEFAULT NULL,
   created_at         DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -25,13 +25,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($gender))   { $errors[] = "Gender is required."; }
 
     // Check if email already exists
-    $stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
+    $stmt = $conn->prepare("SELECT id, is_verified FROM users WHERE email = ?");
     if ($stmt) {
         $stmt->bind_param("s", $email);
         $stmt->execute();
         $stmt->store_result();
-        if ($stmt->num_rows > 0) { $errors[] = "Email is already registered."; }
-        $stmt->close();
+        if ($stmt->num_rows > 0) {
+            $stmt->bind_result($existing_id, $existing_verified);
+            $stmt->fetch();
+            $stmt->close();
+            if ($existing_verified) {
+                $errors[] = "Email is already registered. Login করো।";
+            } else {
+                // Unverified old entry — delete it so fresh insert works
+                $conn->query("DELETE FROM users WHERE id = $existing_id");
+            }
+        } else {
+            $stmt->close();
+        }
     } else {
         $errors[] = "Database error.";
     }
@@ -62,14 +73,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $verification_token = bin2hex(random_bytes(32));
 
         $stmt = $conn->prepare(
-            "INSERT INTO users (name, email, password, phone, gender, photo, is_verified, verification_token)
-             VALUES (?, ?, ?, ?, ?, ?, 0, ?)"
+            "INSERT INTO users (name, email, password, phone, gender, photo, is_verified, verification_token, token_created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 0, ?, NOW())"
         );
         if ($stmt) {
             $stmt->bind_param("sssssss", $name, $email, $hashed_password, $phone, $gender, $photo_path, $verification_token);
             if ($stmt->execute()) {
-                sendVerificationEmail($email, $name, $verification_token);
-                $success = true;
+                $new_user_id = $conn->insert_id;
+                // Send verification email via SMTP
+                $emailSent = sendVerificationEmail($email, $name, $verification_token);
+                if ($emailSent) {
+                    $success = true;
+                } else {
+                    // Email failed — delete user so they can retry
+                    $conn->query("DELETE FROM users WHERE id = $new_user_id");
+                    $errors[] = "Verification email পাঠানো যায়নি। পরে আবার চেষ্টা করো।";
+                }
             } else {
                 $errors[] = "Registration failed. Please try again.";
             }

@@ -16,7 +16,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($password)) { $errors[] = "Password is required."; }
 
     if (empty($errors)) {
-        // Check if user exists (now also fetching is_verified)
         $stmt = $conn->prepare("SELECT id, name, password, phone, gender, photo, is_verified FROM users WHERE email = ?");
         if ($stmt) {
             $stmt->bind_param("s", $email);
@@ -26,7 +25,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $stmt->bind_result($id, $name, $hashed_password, $phone, $gender, $photo, $is_verified);
                 $stmt->fetch();
                 if (password_verify($password, $hashed_password)) {
-                    // ✅ Email verification check
+                    // Email verification check
                     if (!$is_verified) {
                         $errors[] = "⚠️ তোমার email এখনো verify হয়নি। Gmail চেক করো এবং verification link-এ click করো।";
                     } else {
@@ -79,6 +78,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <div class="error">
                         <?php foreach ($errors as $error) echo $error . "<br>"; ?>
                     </div>
+                    <?php if (strpos(implode(' ', $errors), 'verify') !== false): ?>
+                        <p style="font-size:13px;margin:8px 0 0;">
+                            <a href="resend_verification.php" style="color:#197f8f;">Verification email আবার পাঠাও</a>
+                        </p>
+                    <?php endif; ?>
                 <?php endif; ?>
                 <button type="submit" class="btn btn-color">Log In</button>
             </form>

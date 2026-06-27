@@ -23,6 +23,13 @@ function sendVerificationEmail($toEmail, $toName, $token) {
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = MAIL_PORT;
         $mail->CharSet    = 'UTF-8';
+        $mail->SMTPOptions = [
+            'ssl' => [
+                'verify_peer'       => false,
+                'verify_peer_name'  => false,
+                'allow_self_signed' => true,
+            ],
+        ];
 
         // Recipients
         $mail->setFrom(MAIL_USERNAME, 'NoteNest');
