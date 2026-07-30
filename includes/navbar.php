@@ -35,10 +35,9 @@ if (!isset($_SESSION['user_id'])) {
             </a>
             <div id="notifDropdown" class="dropdown-menu dropdown-menu-end p-2" style="min-width:300px;max-width:350px;display:none;"></div>
         </div>
-        <img src="<?php echo isset($_SESSION['user_photo']) && $_SESSION['user_photo'] ? $_SESSION['user_photo'] : 'img/user.png'; ?>" alt="User Photo" class="rounded-circle me-2" style="width:40px;height:40px;object-fit:cover;">
-        <span class="me-3 user-name text-secondary">
-            <a href="profile.php" style="text-decoration:none;color:inherit;"><?php echo htmlspecialchars($_SESSION['user_name']); ?></a>
-        </span>
+        <a class="btn btn-link nav-ai-link" href="study_recommendations.php" title="Study Plan" style="color:#e67e22 !important;">
+            <i class="fas fa-lightbulb"></i> Study Plan
+        </a>
         <a class="btn btn-link nav-ai-link" href="course_management.php" title="Courses">
             <i class="fas fa-graduation-cap"></i> Courses
         </a>
@@ -54,12 +53,13 @@ if (!isset($_SESSION['user_id'])) {
         <a class="btn btn-link nav-ai-link" href="progress_analytics.php" title="Analytics" style="color:#8e44ad !important;">
             <i class="fas fa-chart-line"></i> Analytics
         </a>
-        <a class="btn btn-link nav-ai-link" href="study_recommendations.php" title="Study Plan" style="color:#e67e22 !important;">
-            <i class="fas fa-lightbulb"></i> Study Plan
-        </a>
-        <a class="btn btn-link text-danger logout-link" href="logout.php" title="Logout">
-            <i class="fas fa-right-from-bracket"></i> Logout
-        </a>
+        <div class="d-flex align-items-center ms-3">
+            <img src="<?php echo isset($_SESSION['user_photo']) && $_SESSION['user_photo'] ? $_SESSION['user_photo'] : 'img/user.png'; ?>" alt="User Photo" class="rounded-circle me-2" style="width:40px;height:40px;object-fit:cover;">
+            <span class="user-name text-secondary">
+                <a href="profile.php" style="text-decoration:none;color:inherit;font-weight:500;"><?php echo htmlspecialchars($_SESSION['user_name']); ?></a>
+            </span>
+        </div>
+        <!-- Logout removed from navbar, moved to profile -->
     </div>
   </div>
 </nav>

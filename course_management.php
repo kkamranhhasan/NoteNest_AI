@@ -393,6 +393,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             $tag->execute(); $tag->close();
 
+            require_once 'includes/ai_service.php';
+            index_file_content($conn, $file_id);
+
             $uploaded[] = ['id'=>$file_id,'name'=>$origName,'file_path'=>$relPath,'mime_type'=>$mime];
         }
         echo json_encode(['success'=>true,'uploaded'=>$uploaded,'errors'=>$errors]);

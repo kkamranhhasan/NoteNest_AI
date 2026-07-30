@@ -87,31 +87,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($action === 'generate_questions') {
         $file_id    = (int)($_POST['file_id']    ?? 0);
         $course_id  = (int)($_POST['course_id']  ?? 0);
-        $manual_txt = trim($_POST['manual_text'] ?? '');
         $q_types    = trim($_POST['q_types']     ?? '5 MCQ and 5 short answer');
         $difficulty = $_POST['difficulty']       ?? 'medium';
 
-        // Verify file ownership
-        $content = $manual_txt;
-        $file_name = 'Manual Input';
-
-        if ($file_id > 0) {
-            $fq = $conn->prepare("SELECT name, file_path, mime_type FROM files WHERE id=? AND owner_id=?");
-            $fq->bind_param('ii', $file_id, $user_id);
-            $fq->execute();
-            $file = $fq->get_result()->fetch_assoc();
-            $fq->close();
-
-            if (!$file) { echo json_encode(['success'=>false,'error'=>'File not found.']); exit; }
-            $file_name = $file['name'];
-
-            if (empty($content)) {
-                $content = extractFileText($file['file_path'], $file['mime_type'] ?? '');
-            }
+        if ($file_id <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Please select a study material file first.']);
+            exit;
         }
 
-        if (strlen($content) < 30) {
-            echo json_encode(['success'=>false,'error'=>'Not enough text content to generate questions. Please paste your study material in the text box.']);
+        // Verify file ownership (User Isolation & Security)
+        $fq = $conn->prepare("SELECT name, file_path, mime_type FROM files WHERE id=? AND owner_id=?");
+        $fq->bind_param('ii', $file_id, $user_id);
+        $fq->execute();
+        $file = $fq->get_result()->fetch_assoc();
+        $fq->close();
+
+        if (!$file) {
+            echo json_encode(['success' => false, 'error' => 'Unauthorized or invalid file selection.']);
+            exit;
+        }
+        
+        $file_name = $file['name'];
+        
+        // Fetch chunks of this file from document_chunks (User isolation strictly validated via files table owner_id check above)
+        $cstmt = $conn->prepare("SELECT content FROM document_chunks WHERE file_id=? ORDER BY chunk_index");
+        $cstmt->bind_param('i', $file_id);
+        $cstmt->execute();
+        $cres = $cstmt->get_result();
+        $content = "";
+        while ($row = $cres->fetch_assoc()) {
+            $content .= $row['content'] . "\n";
+        }
+        $cstmt->close();
+
+        if (empty($content)) {
+            // Auto-indexing fallback
+            index_file_content($conn, $file_id);
+            
+            $cstmt = $conn->prepare("SELECT content FROM document_chunks WHERE file_id=? ORDER BY chunk_index");
+            $cstmt->bind_param('i', $file_id);
+            $cstmt->execute();
+            $cres = $cstmt->get_result();
+            while ($row = $cres->fetch_assoc()) {
+                $content .= $row['content'] . "\n";
+            }
+            $cstmt->close();
+        }
+
+        if (strlen(trim($content)) < 30) {
+            echo json_encode(['success' => false, 'error' => 'The selected document does not contain enough extractable text to generate questions.']);
             exit;
         }
 
@@ -644,16 +668,8 @@ function fileIcon(string $mime): string {
 
                 </div>
 
-                <!-- Manual Text Input -->
-                <div class="card-panel">
-                    <h5><i class="fas fa-paste me-2"></i>Or Paste Study Material</h5>
-                    <p style="font-size:.85rem;color:#888;margin-bottom:12px;">
-                        Paste lecture notes, book excerpts, or any text content here. Works for all file types (PDF, DOCX, etc.)
-                    </p>
-                    <textarea id="manualText" class="short-answer-input"
-                              style="min-height:140px;"
-                              placeholder="Paste your study material here... (minimum 30 characters)"></textarea>
-                </div>
+                <!-- Manual Text Input removed for Private Knowledge security policy -->
+                <input type="hidden" id="manualText" value="">
 
                 <!-- Course & Config -->
                 <div class="card-panel">
@@ -851,9 +867,8 @@ function selectQType(el) {
 
 // ── STEP 1 → 2: Generate questions ───────────────────────────
 $('#btnGenerate').on('click', function() {
-    const manualText = $('#manualText').val().trim();
-    if (selectedFileId === 0 && manualText.length < 30) {
-        alert('Please select a file OR paste at least 30 characters of study material.');
+    if (selectedFileId === 0) {
+        alert('Please select a file from your study materials first.');
         return;
     }
 

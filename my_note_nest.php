@@ -343,7 +343,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['note_file'])) {
                 $stmt = $conn->prepare("INSERT INTO files (owner_id, name, file_path, mime_type, folder_id) VALUES (?, ?, ?, ?, ?)");
                 $stmt->bind_param('isssi', $user_id, $file_name, $db_path, $mime, $null);
             }
-            $stmt->execute();
+            if ($stmt->execute()) {
+                $file_id = $conn->insert_id;
+                require_once 'includes/ai_service.php';
+                index_file_content($conn, $file_id);
+            }
             $stmt->close();
             $_SESSION['success_msg'] = "File uploaded!";
             $upload_error = "";

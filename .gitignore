@@ -16,6 +16,23 @@ img/user_photos/*
 config.php
 config.local.php
 
+# --- Environment / Secrets ---
+.env
+.env.local
+# .env.example is safe to commit — it has no real secrets
+
+# --- Docker local overrides (keep docker-compose.yml but ignore local override) ---
+docker-compose.override.yml
+
+# --- Local vector data ---
+chroma_db/
+
+# --- Python virtual environment ---
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
 # --- PHP / Server ---
 *.log
 *.cache
@@ -42,7 +59,3 @@ Thumbs.db
 
 # --- Database dumps (sensitive) ---
 # database/*.sql   # Comment this out if you WANT to push the SQL file
-
-# --- Environment / Secrets ---
-.env
-.env.local

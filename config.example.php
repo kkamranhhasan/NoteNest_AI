@@ -2,36 +2,74 @@
 // ============================================================
 // config.example.php — NoteNest AI Platform Configuration
 // ============================================================
-// ⚠️  এই ফাইলটি কপি করে নাম দাও: config.php
-//     তারপর নিচের সব placeholder মান তোমার আসল মান দিয়ে পূরণ করো।
 //
-//     HOW TO SETUP:
-//     1. Copy this file:   cp config.example.php config.php
-//     2. Fill in your real values in config.php
-//     3. Never commit config.php to GitHub!
+//  HOW TO SETUP:
+//  1. Copy this file:   cp config.example.php config.php
+//  2. Fill in your real values in config.php
+//  3. NEVER commit config.php to GitHub!
+//  4. For deployment: use environment variables instead.
+//     See .env.example for the full list.
 // ============================================================
 
+// ── Environment ───────────────────────────────────────────────
+// Set APP_ENV=production in your server/Docker env for live site.
+// Keep 'local' for XAMPP development (disables SSL verification).
+define('APP_ENV', getenv('APP_ENV') ?: 'local');
+
 // ── Database ─────────────────────────────────────────────────
-define('DB_SERVER',   'localhost');
-define('DB_USERNAME', 'your_db_username');   // e.g. root
-define('DB_PASSWORD', 'your_db_password');   // e.g. '' for XAMPP default
-define('DB_NAME',     'notenest');
+define('DB_SERVER',   getenv('DB_SERVER')   ?: 'localhost');
+define('DB_USERNAME', getenv('DB_USERNAME') ?: 'root');
+define('DB_PASSWORD', getenv('DB_PASSWORD') === false ? '' : getenv('DB_PASSWORD'));
+define('DB_NAME',     getenv('DB_NAME')     ?: 'notenest');
 
 // ── Gmail SMTP ───────────────────────────────────────────────
-// Gmail App Password পেতে: Google Account → Security → 2FA → App Passwords
-define('MAIL_HOST',     'smtp.gmail.com');
-define('MAIL_USERNAME', 'your_email@gmail.com');
-define('MAIL_PASSWORD', 'your_gmail_app_password');   // 16-character app password
-define('MAIL_PORT',     587);
-define('APP_URL',       'http://localhost/NoteNest-main');   // Change for production
+// Gmail App Password: Google Account → Security → 2FA → App Passwords
+define('MAIL_HOST',     getenv('MAIL_HOST')     ?: 'smtp.gmail.com');
+define('MAIL_USERNAME', getenv('MAIL_USERNAME') ?: 'your_email@gmail.com');
+define('MAIL_PASSWORD', getenv('MAIL_PASSWORD') ?: 'your_16char_app_password');
+define('MAIL_PORT',     getenv('MAIL_PORT')     ?: 587);
+define('APP_URL',       getenv('APP_URL')       ?: 'http://localhost/NoteNest-main');
 
-// ── Google Gemini AI ─────────────────────────────────────────
-// API Key পেতে: https://aistudio.google.com/app/apikey
-define('GEMINI_API_KEY',   'your_gemini_api_key_here');
-define('GEMINI_MODEL',     'models/gemini-2.5-flash');
-define('GEMINI_API_URL',   'https://generativelanguage.googleapis.com/v1beta/' . GEMINI_MODEL . ':generateContent');
-define('AI_MAX_TOKENS',    2048);
-define('AI_TEMPERATURE',   0.7);
+// ── Groq AI API ────────────────────────────────────────────
+// Get key from: https://console.groq.com/
+define('GROQ_API_KEY',    getenv('GROQ_API_KEY')    ?: 'your_groq_api_key_here');
+define('GROQ_MODEL',      getenv('GROQ_MODEL')      ?: 'llama-3.3-70b-versatile');
+define('GROQ_MODEL_PRO',  getenv('GROQ_MODEL_PRO')  ?: 'llama-3.3-70b-versatile');
+define('GROQ_MODEL_FAST', getenv('GROQ_MODEL_FAST') ?: 'llama-3.1-8b-instant');
+define('GROQ_API_URL',    getenv('GROQ_API_URL')    ?: 'https://api.groq.com/openai/v1/chat/completions');
+define('AI_MAX_TOKENS',   getenv('AI_MAX_TOKENS')   ?: 2048);
+define('AI_TEMPERATURE',  getenv('AI_TEMPERATURE')  ?: 0.7);
+
+// ── ChromaDB Local Vector Service ──────────────────────────
+define('CHROMA_API_URL', getenv('CHROMA_API_URL') ?: 'http://127.0.0.1:8000');
+
+// ── Jina AI Embeddings (optional — enables vector search) ───
+// Get key: https://jina.ai/ (free tier available)
+define('JINA_API_KEY', getenv('JINA_API_KEY') ?: 'your_jina_api_key_here');
+
+// ── Qdrant Vector Database (optional — enables vector search) ─
+// Use Qdrant Cloud free cluster: https://cloud.qdrant.io/
+define('QDRANT_API_URL', getenv('QDRANT_API_URL') ?: 'http://localhost:6333');
+define('QDRANT_API_KEY', getenv('QDRANT_API_KEY') ?: '');
+
+// ── Google OAuth 2.0 (Classroom Integration) ────────────────
+// Get credentials: https://console.cloud.google.com/
+define('GOOGLE_CLIENT_ID',     getenv('GOOGLE_CLIENT_ID')     ?: 'your_client_id.apps.googleusercontent.com');
+define('GOOGLE_CLIENT_SECRET', getenv('GOOGLE_CLIENT_SECRET') ?: 'your_client_secret');
+
+// Legacy aliases (backward-compat)
+define('GEMINI_API_KEY', GROQ_API_KEY);
+define('GEMINI_MODEL',   GROQ_MODEL);
+define('GROK_API_KEY',   GROQ_API_KEY);
+define('GROK_MODEL',     GROQ_MODEL);
+define('GROK_MODEL_PRO', GROQ_MODEL_PRO);
+define('GROK_API_URL',   GROQ_API_URL);
 
 require_once 'includes/db.php';
+
+// Load Composer vendor autoloader
+if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
+}
 ?>
+

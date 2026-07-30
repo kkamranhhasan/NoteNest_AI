@@ -200,6 +200,34 @@ $top_weak_areas = array_slice(array_keys($weak_freq), 0, 6);
 
 <div class="container pb-5">
     <div class="row g-4">
+        <!-- Main Study Plan Column (Left) -->
+        <div class="col-lg-8" id="mainContent">
+            <div class="glass-card initial-state" id="initialState">
+                <div class="big-icon">🎯</div>
+                <h5>Ready to Get Your Personalized Plan?</h5>
+                <p>Click "Generate My Plan" and our AI will analyze your learning data to create a customized study roadmap just for you.</p>
+                <?php if ($total_exams === 0): ?>
+                <div class="alert mt-3" style="background:#fff8e1;border:1px solid #ffe082;border-radius:12px;font-size:.84rem;color:#795548;">
+                    <i class="fas fa-lightbulb me-2"></i><strong>Tip:</strong> Take at least one AI Exam for more accurate recommendations. <a href="ai_exam.php" style="color:var(--accent);font-weight:600;">Take an exam →</a>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <div class="glass-card ai-loading" id="loadingState" style="display:none;">
+                <div class="pulse-ring"></div>
+                <h6 class="fw-bold mb-3" style="color:var(--primary);">AI is analyzing your learning profile...</h6>
+                <ul class="load-steps">
+                    <li><i class="fas fa-check-circle me-2" style="color:var(--accent);"></i>Gathering your exam history</li>
+                    <li><i class="fas fa-check-circle me-2" style="color:var(--accent);"></i>Identifying weak areas & patterns</li>
+                    <li><i class="fas fa-check-circle me-2" style="color:var(--accent);"></i>Building personalized recommendations</li>
+                    <li><i class="fas fa-check-circle me-2" style="color:var(--accent);"></i>Creating your weekly study plan</li>
+                </ul>
+            </div>
+
+            <div id="resultsArea" style="display:none;"></div>
+        </div>
+
+        <!-- Learning Profile Column (Right) -->
         <div class="col-lg-4">
             <div class="glass-card">
                 <h6 class="fw-bold mb-3" style="color:var(--primary);"><i class="fas fa-user-graduate me-2"></i>Your Learning Profile</h6>
@@ -232,32 +260,6 @@ $top_weak_areas = array_slice(array_keys($weak_freq), 0, 6);
                 <div class="d-flex gap-3 mb-3"><div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#8e44ad,#9b59b6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0;">2</div><div><div style="font-size:.84rem;font-weight:600;color:#333;">AI Generates Plan</div><div style="font-size:.76rem;color:#888;">Prioritized topics with study tips</div></div></div>
                 <div class="d-flex gap-3"><div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#27ae60,#2ecc71);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0;">3</div><div><div style="font-size:.84rem;font-weight:600;color:#333;">Follow Weekly Plan</div><div style="font-size:.76rem;color:#888;">Day-by-day structured schedule</div></div></div>
             </div>
-        </div>
-
-        <div class="col-lg-8" id="mainContent">
-            <div class="glass-card initial-state" id="initialState">
-                <div class="big-icon">🎯</div>
-                <h5>Ready to Get Your Personalized Plan?</h5>
-                <p>Click "Generate My Plan" and our AI will analyze your learning data to create a customized study roadmap just for you.</p>
-                <?php if ($total_exams === 0): ?>
-                <div class="alert mt-3" style="background:#fff8e1;border:1px solid #ffe082;border-radius:12px;font-size:.84rem;color:#795548;">
-                    <i class="fas fa-lightbulb me-2"></i><strong>Tip:</strong> Take at least one AI Exam for more accurate recommendations. <a href="ai_exam.php" style="color:var(--accent);font-weight:600;">Take an exam →</a>
-                </div>
-                <?php endif; ?>
-            </div>
-
-            <div class="glass-card ai-loading" id="loadingState" style="display:none;">
-                <div class="pulse-ring"></div>
-                <h6 class="fw-bold mb-3" style="color:var(--primary);">AI is analyzing your learning profile...</h6>
-                <ul class="load-steps">
-                    <li><i class="fas fa-check-circle me-2" style="color:var(--accent);"></i>Gathering your exam history</li>
-                    <li><i class="fas fa-check-circle me-2" style="color:var(--accent);"></i>Identifying weak areas & patterns</li>
-                    <li><i class="fas fa-check-circle me-2" style="color:var(--accent);"></i>Building personalized recommendations</li>
-                    <li><i class="fas fa-check-circle me-2" style="color:var(--accent);"></i>Creating your weekly study plan</li>
-                </ul>
-            </div>
-
-            <div id="resultsArea" style="display:none;"></div>
         </div>
     </div>
 </div>

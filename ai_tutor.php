@@ -1,7 +1,7 @@
 <?php
 // ============================================================
 // ai_tutor.php — NoteNest AI Platform
-// AI Tutor Chat Interface (Gemini 2.5 Flash)
+// AI Tutor Chat Interface
 // ============================================================
 require 'includes/auth.php';
 require 'config.php';
@@ -14,29 +14,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
     $action = $_POST['action'];
 
-    // ── SEND MESSAGE ──────────────────────────────────────────
+    // ── SEND MESSAGE (RAG SYSTEM) ──────────────────────────────
     if ($action === 'send_message') {
         $message    = trim($_POST['message']   ?? '');
         $session_id = trim($_POST['session_id'] ?? '');
         $course_id  = (int)($_POST['course_id'] ?? 0);
+        $folder_id  = (int)($_POST['folder_id'] ?? 0);
+        $topic_id   = (int)($_POST['topic_id'] ?? 0);
+        $file_ids   = isset($_POST['file_ids']) ? array_map('intval', $_POST['file_ids']) : [];
+        $select_all = isset($_POST['select_all']) && $_POST['select_all'] == 1;
 
         if (!$message || !$session_id) {
             echo json_encode(['success' => false, 'error' => 'Message and session ID required.']);
             exit;
         }
 
-        // Fetch course context if selected
-        $course_name = '';
-        if ($course_id > 0) {
-            $cs = $conn->prepare("SELECT name, code FROM courses WHERE id=? AND user_id=?");
-            $cs->bind_param('ii', $course_id, $user_id);
-            $cs->execute();
-            $cr = $cs->get_result()->fetch_assoc();
-            $cs->close();
-            if ($cr) $course_name = $cr['code'] . ' — ' . $cr['name'];
+        // Enforce File Selection: user must select files or check Select All
+        $search_files = null;
+        if (!$select_all && !empty($file_ids)) {
+            $search_files = $file_ids;
+        } elseif (!$select_all && empty($file_ids)) {
+            // Strict Security Rule: if no files are selected, return exact mismatch response
+            echo json_encode([
+                'success' => true,
+                'reply'   => "I couldn't find this information in the selected study materials.",
+                'tokens'  => 0
+            ]);
+            exit;
         }
 
-        // Load recent conversation history for this session (last 10 turns)
+        // Retrieve top 5 matching chunks from database (ownership strictly validated inside search_document_chunks)
+        $chunks = search_document_chunks(
+            $conn, 
+            $user_id, 
+            $message, 
+            $course_id ?: null, 
+            $folder_id ?: null, 
+            $topic_id ?: null, 
+            $search_files, 
+            5
+        );
+
+        if (empty($chunks)) {
+            // No matching chunks, return strict response immediately (no LLM call)
+            echo json_encode([
+                'success' => true,
+                'reply'   => "I couldn't find this information in the selected study materials.",
+                'tokens'  => 0
+            ]);
+            exit;
+        }
+
+        // Build context block
+        $context = "";
+        $idx = 1;
+        foreach ($chunks as $c) {
+            $context .= "[Chunk {$idx}]\n";
+            $context .= "Course: " . ($c['course_code'] ?: 'N/A') . " — " . ($c['course_name'] ?: 'N/A') . "\n";
+            $context .= "Folder: " . ($c['folder_name'] ?: 'N/A') . "\n";
+            $context .= "Topic: " . ($c['topic_name'] ?: 'N/A') . "\n";
+            $context .= "File: " . ($c['file_name'] ?: 'N/A') . "\n";
+            $context .= "Page: " . ($c['page_number'] ?: '1') . "\n";
+            $context .= "Confidence: " . ($c['confidence_score'] ?: '100') . "%\n";
+            $context .= "Content: " . $c['content'] . "\n\n";
+            $idx++;
+        }
+
+        // Strict system prompt for NoteNest AI
+        $systemPrompt = "You are NoteNest AI Tutor.
+Your knowledge is LIMITED ONLY to the provided context.
+Never answer using your own knowledge.
+Never answer from the internet.
+Never guess.
+Never fabricate.
+Answer ONLY using the retrieved context.
+
+Additional features instructions:
+- AI SUMMARY: If the user requests a summary, summarize ONLY the provided context.
+- FLASHCARDS: If the user requests flashcards, generate them ONLY from the provided context.
+- VIVA: If the user requests a viva/oral exam, generate questions ONE-BY-ONE based ONLY on the provided context.
+
+If the answer or topic is unavailable in the provided context, reply exactly:
+\"I couldn't find this information in the selected study materials.\"";
+
+        // Load recent conversation history (last 10 turns)
         $history = [];
         $hq = $conn->prepare(
             "SELECT role, message FROM ai_chat_history
@@ -48,37 +109,145 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $hres = $hq->get_result();
         while ($row = $hres->fetch_assoc()) {
             $history[] = [
-                'role' => $row['role'] === 'assistant' ? 'model' : 'user',
-                'text' => $row['message']
+                'role' => $row['role'] === 'assistant' ? 'assistant' : 'user',
+                'content' => $row['message']
             ];
         }
         $hq->close();
 
-        // Save user message to DB
+        // Save user question to DB
         saveAiChat($conn, $user_id, $session_id, 'user', $message, 'tutor', $course_id);
 
-        // Call Gemini AI
-        $aiResult = aiChat($message, $history, $course_name);
+        // Prepare messages for Groq API
+        $messages = [['role' => 'system', 'content' => $systemPrompt]];
+        foreach ($history as $h) {
+            $messages[] = ['role' => $h['role'], 'content' => $h['content']];
+        }
+        $fullUserMsg = "STUDENT QUESTION: {$message}\n\nRETRIEVED STUDY MATERIAL CONTEXT:\n{$context}";
+        $messages[] = ['role' => 'user', 'content' => $fullUserMsg];
+
+        // Call Groq (Low temperature for precise retrieval)
+        $aiResult = grokRequest($messages, GROQ_MODEL, 0.1);
 
         if (!$aiResult['success']) {
             echo json_encode(['success' => false, 'error' => $aiResult['error']]);
             exit;
         }
 
-        $aiReply = $aiResult['text'];
+        $aiReply = trim($aiResult['text']);
         $tokens  = $aiResult['tokens'];
 
-        // Save AI reply to DB
+        // Format Answer & Citation block
+        if ($aiReply !== "I couldn't find this information in the selected study materials.") {
+            $bestChunk = $chunks[0];
+            $courseStr = ($bestChunk['course_code'] ?: 'N/A') . ' — ' . ($bestChunk['course_name'] ?: 'N/A');
+            $topicStr  = $bestChunk['topic_name'] ?: 'General';
+            $fileStr   = $bestChunk['file_name'] ?: 'N/A';
+            $pageStr   = $bestChunk['page_number'] ?: '1';
+            $confStr   = ($bestChunk['confidence_score'] ?: '100') . '%';
+            
+            $aiReply = "Answer\n\n" . $aiReply . "\n\nSource\nCourse: " . $courseStr . "\nTopic: " . $topicStr . "\nFile: " . $fileStr . "\nPage: " . $pageStr . "\nConfidence: " . $confStr;
+        }
+
+        // Save AI response to DB
         saveAiChat($conn, $user_id, $session_id, 'assistant', $aiReply, 'tutor', $course_id, $tokens);
 
-        // Log progress event
-        logProgress($conn, $user_id, 'ai_chat', 'AI Tutor session', $course_id);
+        // Log progress
+        logProgress($conn, $user_id, 'ai_chat', 'Private AI Tutor session', $course_id);
 
         echo json_encode([
             'success' => true,
             'reply'   => $aiReply,
             'tokens'  => $tokens
         ]);
+        exit;
+    }
+
+    // ── GET FOLDERS ───────────────────────────────────────────
+    if ($action === 'get_folders') {
+        $course_id = (int)($_POST['course_id'] ?? 0);
+        $topic_id  = (int)($_POST['topic_id'] ?? 0);
+        
+        $target_folder_id = 0;
+        if ($topic_id > 0) {
+            $tstmt = $conn->prepare("SELECT folder_id FROM course_topics WHERE id = ?");
+            $tstmt->bind_param('i', $topic_id);
+            $tstmt->execute();
+            $tstmt->bind_result($fId);
+            if ($tstmt->fetch()) {
+                $target_folder_id = (int)$fId;
+            }
+            $tstmt->close();
+        }
+
+        if ($course_id > 0) {
+            $stmt = $conn->prepare("SELECT id, name FROM folders WHERE course_id = ? AND owner_id = ?");
+            $stmt->bind_param('ii', $course_id, $user_id);
+        } else {
+            $stmt = $conn->prepare("SELECT id, name FROM folders WHERE owner_id = ?");
+            $stmt->bind_param('i', $user_id);
+        }
+        $stmt->execute();
+        $folders = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        echo json_encode(['success' => true, 'folders' => $folders, 'target_folder_id' => $target_folder_id]);
+        exit;
+    }
+
+    // ── GET TOPICS ────────────────────────────────────────────
+    if ($action === 'get_topics') {
+        $course_id = (int)($_POST['course_id'] ?? 0);
+        if ($course_id > 0) {
+            $stmt = $conn->prepare("SELECT id, title FROM course_topics WHERE course_id = ?");
+            $stmt->bind_param('i', $course_id);
+        } else {
+            $stmt = $conn->prepare("SELECT ct.id, ct.title FROM course_topics ct JOIN courses c ON ct.course_id = c.id WHERE c.user_id = ?");
+            $stmt->bind_param('i', $user_id);
+        }
+        $stmt->execute();
+        $topics = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        echo json_encode(['success' => true, 'topics' => $topics]);
+        exit;
+    }
+
+    // ── GET FILES ─────────────────────────────────────────────
+    if ($action === 'get_files') {
+        $course_id = (int)($_POST['course_id'] ?? 0);
+        $folder_id = (int)($_POST['folder_id'] ?? 0);
+        $topic_id  = (int)($_POST['topic_id'] ?? 0);
+
+        $sql = "SELECT DISTINCT f.id, f.name FROM files f
+                LEFT JOIN file_course_tags fct ON fct.file_id = f.id
+                LEFT JOIN folders fo ON f.folder_id = fo.id
+                WHERE f.owner_id = ?";
+        $params = [$user_id];
+        $types = 'i';
+
+        if ($course_id > 0) {
+            $sql .= " AND (f.course_id = ? OR fct.course_id = ? OR fo.course_id = ?)";
+            $params[] = $course_id;
+            $params[] = $course_id;
+            $params[] = $course_id;
+            $types .= 'iii';
+        }
+        if ($folder_id > 0) {
+            $sql .= " AND f.folder_id = ?";
+            $params[] = $folder_id;
+            $types .= 'i';
+        }
+        if ($topic_id > 0) {
+            $sql .= " AND fct.topic_id = ?";
+            $params[] = $topic_id;
+            $types .= 'i';
+        }
+
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $files = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        echo json_encode(['success' => true, 'files' => $files]);
         exit;
     }
 
@@ -605,15 +774,53 @@ $initial_session = bin2hex(random_bytes(16));
 
         <!-- Course Selector -->
         <div class="course-selector">
-            <label>Study Context</label>
+            <label><i class="fas fa-graduation-cap me-1"></i> Course</label>
             <select id="courseSelect">
-                <option value="0">🎓 General Tutor</option>
+                <option value="0">🎓 Select Course...</option>
                 <?php foreach ($courses as $c): ?>
                 <option value="<?php echo $c['id']; ?>">
                     <?php echo htmlspecialchars($c['code'] . ' — ' . $c['name']); ?>
                 </option>
                 <?php endforeach; ?>
             </select>
+        </div>
+
+        <!-- Topic Selector -->
+        <div class="course-selector mt-2">
+            <label><i class="fas fa-tag me-1"></i> Topic</label>
+            <select id="topicSelect" disabled>
+                <option value="0">🏷️ Select Topic...</option>
+            </select>
+        </div>
+
+        <!-- Folder Selector -->
+        <div class="course-selector mt-2">
+            <label><i class="fas fa-folder me-1"></i> Folder</label>
+            <select id="folderSelect" disabled>
+                <option value="0">📁 Select Folder...</option>
+            </select>
+        </div>
+
+        <!-- Document Search Scope -->
+        <div class="course-selector mt-3 mb-2" style="border-top: 1px solid #eee; padding-top: 12px;">
+            <label class="d-flex align-items-center justify-content-between mb-2" style="font-size: 0.8rem; font-weight: 600; color: var(--primary);">
+                <span><i class="fas fa-file-pdf me-1"></i> Study Materials</span>
+                <span class="small text-muted" id="fileCountBadge">0 selected</span>
+            </label>
+            
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="selectAllFiles" disabled>
+                <label class="form-check-label fw-bold text-dark small" for="selectAllFiles">
+                    Select All Files
+                </label>
+            </div>
+            
+            <div class="file-list-container" id="fileListContainer" style="max-height: 150px; overflow-y: auto; border: 1.5px solid #dde2e8; border-radius: 8px; padding: 8px; background: #fff; display:none;">
+                <!-- Files loaded dynamically via JS -->
+            </div>
+            <div class="text-muted text-center py-2 small bg-white border rounded" id="noFilesMsg" style="font-size: 0.78rem;">
+                Please select a course to list documents.
+            </div>
         </div>
 
         <!-- Past Sessions -->
@@ -721,12 +928,151 @@ $('#chatInput').on('keydown', function(e) {
 });
 $('#btnSend').on('click', sendMessage);
 
+// ── RAG UI Selectors Change Handlers ───────────────────────────
+$('#courseSelect').on('change', function() {
+    const courseId = $(this).val();
+    if (courseId == 0) {
+        $('#topicSelect').val('0').html('<option value="0">🏷️ Select Topic...</option>').prop('disabled', true);
+        $('#folderSelect').val('0').html('<option value="0">📁 Select Folder...</option>').prop('disabled', true);
+        $('#selectAllFiles').prop('checked', false).prop('disabled', true);
+        $('#fileListContainer').hide().empty();
+        $('#noFilesMsg').html('Please select a course to list documents.').show();
+        updateFileCount();
+        return;
+    }
+
+    // Load topics
+    $.post('ai_tutor.php', { action: 'get_topics', course_id: courseId }, function(res) {
+        if (res.success) {
+            let html = '<option value="0">🏷️ Select Topic...</option>';
+            res.topics.forEach(t => {
+                html += `<option value="${t.id}">${escHtml(t.title)}</option>`;
+            });
+            $('#topicSelect').html(html).prop('disabled', false);
+        }
+    }, 'json');
+
+    // Clear folder dropdown & load files of the course
+    $('#folderSelect').val('0').html('<option value="0">📁 Select Folder...</option>').prop('disabled', true);
+    loadFiles();
+});
+
+$('#topicSelect').on('change', function() {
+    const topicId = $(this).val();
+    const courseId = $('#courseSelect').val();
+    
+    if (topicId == 0) {
+        $('#folderSelect').val('0').html('<option value="0">📁 Select Folder...</option>').prop('disabled', true);
+        loadFiles();
+        return;
+    }
+
+    // Load folders corresponding to this course/topic
+    $.post('ai_tutor.php', { action: 'get_folders', course_id: courseId, topic_id: topicId }, function(res) {
+        if (res.success) {
+            let html = '<option value="0">📁 Select Folder...</option>';
+            res.folders.forEach(f => {
+                html += `<option value="${f.id}">${escHtml(f.name)}</option>`;
+            });
+            $('#folderSelect').html(html).prop('disabled', false);
+            
+            // Auto-select linked folder if available
+            if (res.target_folder_id > 0) {
+                $('#folderSelect').val(res.target_folder_id);
+            }
+        }
+        loadFiles();
+    }, 'json');
+});
+
+$('#folderSelect').on('change', function() {
+    loadFiles();
+});
+
+function loadFiles() {
+    const courseId = $('#courseSelect').val();
+    const topicId = $('#topicSelect').val() || 0;
+    const folderId = $('#folderSelect').val() || 0;
+
+    $.post('ai_tutor.php', {
+        action: 'get_files',
+        course_id: courseId,
+        topic_id: topicId,
+        folder_id: folderId
+    }, function(res) {
+        if (res.success) {
+            $('#fileListContainer').empty();
+            if (res.files.length > 0) {
+                res.files.forEach(f => {
+                    const item = $(`
+                        <div class="form-check text-start mb-1" style="font-size: 0.8rem;">
+                            <input class="form-check-input file-chk" type="checkbox" value="${f.id}" id="file_${f.id}">
+                            <label class="form-check-label text-dark text-truncate d-inline-block w-100 mb-0" for="file_${f.id}" title="${escHtml(f.name)}" style="cursor:pointer; max-width: 90%;">
+                                ${escHtml(f.name)}
+                            </label>
+                        </div>
+                    `);
+                    $('#fileListContainer').append(item);
+                });
+                $('#fileListContainer').show();
+                $('#noFilesMsg').hide();
+                $('#selectAllFiles').prop('disabled', false).prop('checked', true);
+                $('.file-chk').prop('checked', true);
+            } else {
+                $('#fileListContainer').hide();
+                $('#noFilesMsg').html('No files found for this criteria.').show();
+                $('#selectAllFiles').prop('disabled', true).prop('checked', false);
+            }
+            updateFileCount();
+        }
+    }, 'json');
+}
+
+// Check/Uncheck all files
+$('#selectAllFiles').on('change', function() {
+    const checked = $(this).is(':checked');
+    $('.file-chk').prop('checked', checked);
+    updateFileCount();
+});
+
+// Individual file checkbox change
+$(document).on('change', '.file-chk', function() {
+    const total = $('.file-chk').length;
+    const checked = $('.file-chk:checked').length;
+    $('#selectAllFiles').prop('checked', total === checked);
+    updateFileCount();
+});
+
+function updateFileCount() {
+    const checked = $('.file-chk:checked').length;
+    $('#fileCountBadge').text(`${checked} selected`);
+}
+
 // ── Send Message ──────────────────────────────────────────────
 function sendMessage() {
     const msg = $('#chatInput').val().trim();
     if (!msg || isLoading) return;
 
     const courseId = $('#courseSelect').val();
+    const topicId = $('#topicSelect').val() || 0;
+    const folderId = $('#folderSelect').val() || 0;
+    const selectAll = $('#selectAllFiles').is(':checked') ? 1 : 0;
+
+    // Get checked file IDs
+    const fileIds = [];
+    $('.file-chk:checked').each(function() {
+        fileIds.push($(this).val());
+    });
+
+    // Validation: Require file selection or Select All
+    if (courseId == 0) {
+        alert('Please select a course to scope the AI tutor context.');
+        return;
+    }
+    if (!selectAll && fileIds.length === 0) {
+        alert('Please select at least one study material file or check "Select All Files" before asking.');
+        return;
+    }
 
     // Hide welcome screen
     $('#welcomeScreen').hide();
@@ -743,7 +1089,11 @@ function sendMessage() {
         action:     'send_message',
         message:    msg,
         session_id: currentSession,
-        course_id:  courseId
+        course_id:  courseId,
+        topic_id:   topicId,
+        folder_id:  folderId,
+        select_all: selectAll,
+        file_ids:   fileIds
     }, function(res) {
         hideTyping();
         setLoading(false);

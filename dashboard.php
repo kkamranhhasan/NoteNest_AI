@@ -14,10 +14,10 @@ require 'includes/ai_service.php';
 $user_id = $_SESSION['user_id'];
 
 // ── Fresh user data ───────────────────────────────────────────
-$stmt = $conn->prepare("SELECT name, photo, created_at FROM users WHERE id = ?");
+$stmt = $conn->prepare("SELECT name, email, photo, created_at FROM users WHERE id = ?");
 $stmt->bind_param('i', $user_id);
 $stmt->execute();
-$stmt->bind_result($db_name, $db_photo, $db_created);
+$stmt->bind_result($db_name, $db_email, $db_photo, $db_created);
 $stmt->fetch();
 $stmt->close();
 $_SESSION['user_name']  = $db_name;
@@ -107,6 +107,7 @@ $aq->close();
 
 // Log login progress
 logProgress($conn, $user_id, 'login', 'Dashboard visit');
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -123,6 +124,87 @@ logProgress($conn, $user_id, 'login', 'Dashboard visit');
     <style>
         :root { --primary:#0b4954; --accent:#197f8f; --bg:#f0f4f8; }
         body { font-family:'Inter',sans-serif; background:var(--bg); }
+
+        /* Custom Logout Modal Styles */
+        .custom-modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(11, 73, 84, 0.4);
+            backdrop-filter: blur(8px);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .custom-modal-overlay.active {
+            opacity: 1; pointer-events: all;
+        }
+        .custom-modal-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 32px;
+            width: 90%; max-width: 400px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            transform: scale(0.9);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            text-align: center;
+        }
+        .custom-modal-overlay.active .custom-modal-card {
+            transform: scale(1);
+        }
+        .custom-modal-icon {
+            font-size: 3rem;
+            color: #e74c3c;
+            margin-bottom: 16px;
+        }
+        .custom-modal-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #0b4954;
+            margin-bottom: 8px;
+        }
+        .custom-modal-text {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 24px;
+        }
+        .custom-modal-btn-confirm {
+            background: #e74c3c;
+            color: #fff;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            margin-right: 12px;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .custom-modal-btn-confirm:hover {
+            background: #c0392b;
+            color: #fff;
+            transform: translateY(-1px);
+        }
+        .custom-modal-btn-cancel {
+            background: #f1f2f6;
+            color: #555;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: inline-block;
+        }
+        .custom-modal-btn-cancel:hover {
+            background: #dfe4ea;
+            transform: translateY(-1px);
+        }
+
+        /* Profile Sidebar Widget hover states */
+        .profile-sidebar-card .list-group-item:hover {
+            background-color: #f8fafb !important;
+            color: #0b4954 !important;
+        }
 
         /* Welcome Banner */
         .welcome-banner {
@@ -550,6 +632,35 @@ function syncStorage() {
         btn.prop('disabled', false).html(originalText);
     });
 }
+
+// ── Logout Confirmation Script ──
+$(function() {
+    $(document).on('click', '.logout-btn-trigger', function(e) {
+        e.preventDefault();
+        $('#customLogoutModal').addClass('active');
+    });
+    
+    $(document).on('click', '.custom-modal-btn-cancel, .custom-modal-overlay', function(e) {
+        if (e.target === this || $(e.target).hasClass('custom-modal-btn-cancel') || $(e.target).closest('.custom-modal-btn-cancel').length) {
+            $('#customLogoutModal').removeClass('active');
+        }
+    });
+});
 </script>
+
+<!-- Custom Logout Confirmation Modal -->
+<div class="custom-modal-overlay" id="customLogoutModal">
+    <div class="custom-modal-card">
+        <div class="custom-modal-icon">
+            <i class="fas fa-sign-out-alt"></i>
+        </div>
+        <div class="custom-modal-title">Confirm Logout</div>
+        <div class="custom-modal-text">Are you sure you want to log out of NoteNest? Your current session will end.</div>
+        <div class="d-flex justify-content-center">
+            <a href="logout.php" class="custom-modal-btn-confirm text-decoration-none">Logout</a>
+            <button type="button" class="custom-modal-btn-cancel">Cancel</button>
+        </div>
+    </div>
+</div>
 </body>
 </html>

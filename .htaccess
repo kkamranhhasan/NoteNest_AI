@@ -1,0 +1,59 @@
+# ============================================================
+# .htaccess — NoteNest AI Platform
+# Apache security and routing rules
+# ============================================================
+
+Options -Indexes
+ServerSignature Off
+
+# ── Block access to sensitive files ──────────────────────────
+<FilesMatch "(^debug_|composer\.|\.sql$|\.json$|\.lock$|\.yml$|\.yaml$|\.env|\.git|\.md$)">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Allow access to specific JSON-like responses that are actually PHP endpoints
+<FilesMatch "\.php$">
+    Order Allow,Deny
+    Allow from all
+</FilesMatch>
+
+# ── Block access to directories ───────────────────────────────
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Block vendor directory from web access
+    RewriteRule ^vendor/ - [F,L]
+
+    # Block embeddings / vector / services / includes / cron directories
+    RewriteRule ^embeddings/ - [F,L]
+    RewriteRule ^vector/ - [F,L]
+    RewriteRule ^services/ - [F,L]
+    RewriteRule ^includes/ - [F,L]
+    RewriteRule ^cron/ - [F,L]
+    RewriteRule ^chroma_db/ - [F,L]
+    RewriteRule ^phpmailer/ - [F,L]
+
+    # Block debug PHP files
+    RewriteRule ^debug_ - [F,L]
+</IfModule>
+
+# ── Security Headers ──────────────────────────────────────────
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# ── Disable PHP error display in production ───────────────────
+php_flag display_errors off
+php_flag display_startup_errors off
+php_value error_reporting 0
+
+# ── Upload size limits ────────────────────────────────────────
+php_value upload_max_filesize 50M
+php_value post_max_size 52M
+php_value max_execution_time 120
+php_value max_input_time 120
+php_value memory_limit 256M

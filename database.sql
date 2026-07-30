@@ -222,3 +222,219 @@ CREATE TABLE IF NOT EXISTS lecture_recordings (
   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE,
   FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL
 );
+
+-- ============================================================
+-- Google Classroom Integration Tables
+-- ============================================================
+
+-- ── 16. Google Accounts (OAuth tokens per user) ──────────────
+CREATE TABLE IF NOT EXISTS google_accounts (
+  id              INT AUTO_INCREMENT PRIMARY KEY,
+  user_id         INT NOT NULL UNIQUE,
+  google_email    VARCHAR(150) NOT NULL,
+  access_token    TEXT NOT NULL,
+  refresh_token   TEXT NOT NULL,
+  token_expiry    DATETIME NOT NULL,
+  last_sync_at    DATETIME DEFAULT NULL,
+  sync_status     ENUM('idle','syncing','error') DEFAULT 'idle',
+  sync_error      TEXT DEFAULT NULL,
+  connected_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- ── 17. Google Courses ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS google_courses (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  user_id           INT NOT NULL,
+  google_course_id  VARCHAR(100) NOT NULL,
+  course_id         INT DEFAULT NULL,
+  root_folder_id    INT DEFAULT NULL,
+  course_name       VARCHAR(255) NOT NULL,
+  section           VARCHAR(255) DEFAULT NULL,
+  description       TEXT DEFAULT NULL,
+  course_code       VARCHAR(50) DEFAULT NULL,
+  course_state      VARCHAR(20) DEFAULT 'ACTIVE',
+  teacher_name      VARCHAR(200) DEFAULT NULL,
+  last_synced_at    DATETIME DEFAULT NULL,
+  created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE,
+  FOREIGN KEY (course_id) REFERENCES courses(id)  ON DELETE SET NULL,
+  FOREIGN KEY (root_folder_id) REFERENCES folders(id) ON DELETE SET NULL,
+  UNIQUE KEY unique_google_course (user_id, google_course_id)
+);
+
+-- ── 18. Google Topics ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS google_topics (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  user_id           INT NOT NULL,
+  google_course_id  VARCHAR(100) NOT NULL,
+  google_topic_id   VARCHAR(100) NOT NULL,
+  topic_id          INT DEFAULT NULL,
+  folder_id         INT DEFAULT NULL,
+  topic_name        VARCHAR(255) NOT NULL,
+  sort_order        INT DEFAULT 0,
+  created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id)  REFERENCES users(id)          ON DELETE CASCADE,
+  FOREIGN KEY (topic_id) REFERENCES course_topics(id)  ON DELETE SET NULL,
+  FOREIGN KEY (folder_id) REFERENCES folders(id)       ON DELETE SET NULL,
+  UNIQUE KEY unique_google_topic (user_id, google_course_id, google_topic_id)
+);
+
+-- ── 19. Google Files ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS google_files (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  user_id           INT NOT NULL,
+  google_course_id  VARCHAR(100) NOT NULL,
+  google_file_id    VARCHAR(200) NOT NULL,
+  google_material_id VARCHAR(200) DEFAULT NULL,
+  file_id           INT DEFAULT NULL,
+  folder_id         INT DEFAULT NULL,
+  course_id         INT DEFAULT NULL,
+  topic_id          INT DEFAULT NULL,
+  file_title        VARCHAR(255) NOT NULL,
+  file_type         VARCHAR(50) DEFAULT NULL,
+  mime_type         VARCHAR(100) DEFAULT NULL,
+  file_url          TEXT DEFAULT NULL,
+  download_status   ENUM('pending','downloaded','failed','skipped') DEFAULT 'pending',
+  error_message     TEXT DEFAULT NULL,
+  created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE,
+  FOREIGN KEY (file_id)   REFERENCES files(id)   ON DELETE SET NULL,
+  FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL,
+  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL,
+  UNIQUE KEY unique_google_file (user_id, google_file_id)
+);
+
+-- ── 20. Google Assignments ───────────────────────────────────
+CREATE TABLE IF NOT EXISTS google_assignments (
+  id                    INT AUTO_INCREMENT PRIMARY KEY,
+  user_id               INT NOT NULL,
+  google_course_id      VARCHAR(100) NOT NULL,
+  google_coursework_id  VARCHAR(100) NOT NULL,
+  todo_id               INT DEFAULT NULL,
+  calendar_event_id     INT DEFAULT NULL,
+  course_id             INT DEFAULT NULL,
+  title                 VARCHAR(255) NOT NULL,
+  description           TEXT DEFAULT NULL,
+  due_date              DATE DEFAULT NULL,
+  due_time              TIME DEFAULT NULL,
+  max_points            DECIMAL(6,2) DEFAULT NULL,
+  work_type             VARCHAR(50) DEFAULT NULL,
+  state                 VARCHAR(20) DEFAULT 'PUBLISHED',
+  ai_analysis           LONGTEXT DEFAULT NULL,
+  ai_questions_generated TINYINT(1) DEFAULT 0,
+  reminders_created     TINYINT(1) DEFAULT 0,
+  created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE,
+  FOREIGN KEY (todo_id)   REFERENCES todos(id)    ON DELETE SET NULL,
+  FOREIGN KEY (course_id) REFERENCES courses(id)  ON DELETE SET NULL,
+  UNIQUE KEY unique_google_assignment (user_id, google_course_id, google_coursework_id)
+);
+
+-- ── 21. Google Sync Logs ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS google_sync_logs (
+  id              INT AUTO_INCREMENT PRIMARY KEY,
+  user_id         INT NOT NULL,
+  sync_type       ENUM('manual','cron','auto') DEFAULT 'manual',
+  status          ENUM('started','completed','failed') DEFAULT 'started',
+  courses_synced  INT DEFAULT 0,
+  topics_synced   INT DEFAULT 0,
+  files_synced    INT DEFAULT 0,
+  assignments_synced INT DEFAULT 0,
+  errors_count    INT DEFAULT 0,
+  error_details   LONGTEXT DEFAULT NULL,
+  duration_sec    DECIMAL(8,2) DEFAULT NULL,
+  started_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+  completed_at    DATETIME DEFAULT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  KEY idx_sync_user_date (user_id, started_at)
+);
+
+-- ── 22. Calendar Events ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id              INT AUTO_INCREMENT PRIMARY KEY,
+  user_id         INT NOT NULL,
+  todo_id         INT DEFAULT NULL,
+  assignment_id   INT DEFAULT NULL,
+  course_id       INT DEFAULT NULL,
+  title           VARCHAR(255) NOT NULL,
+  description     TEXT DEFAULT NULL,
+  event_date      DATE NOT NULL,
+  event_time      TIME DEFAULT NULL,
+  priority        ENUM('low','medium','high') DEFAULT 'medium',
+  event_type      ENUM('assignment','exam','lecture','reminder','other') DEFAULT 'assignment',
+  color           VARCHAR(7) DEFAULT '#4285f4',
+  is_completed    TINYINT(1) DEFAULT 0,
+  source          ENUM('manual','google_classroom') DEFAULT 'google_classroom',
+  created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE,
+  FOREIGN KEY (todo_id)   REFERENCES todos(id)    ON DELETE SET NULL,
+  FOREIGN KEY (course_id) REFERENCES courses(id)  ON DELETE SET NULL,
+  KEY idx_calendar_user_date (user_id, event_date)
+);
+
+-- ── 23. Document Chunks (Private Knowledge Vector/Sparse Embeddings) ──
+CREATE TABLE IF NOT EXISTS document_chunks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  course_id INT DEFAULT NULL,
+  folder_id INT DEFAULT NULL,
+  topic_id INT DEFAULT NULL,
+  file_id INT NOT NULL,
+  chunk_index INT NOT NULL,
+  content LONGTEXT NOT NULL,
+  page_number INT DEFAULT 1,
+  embedding_id VARCHAR(36) DEFAULT NULL COMMENT 'Qdrant/Jina point UUID',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+  INDEX idx_dc_user (user_id),
+  INDEX idx_dc_file (file_id),
+  INDEX idx_dc_embedding (embedding_id)
+);
+
+-- ── 24. Embedding Jobs (Tracks async file indexing status) ────
+CREATE TABLE IF NOT EXISTS embedding_jobs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  file_id INT NOT NULL UNIQUE,
+  status ENUM('pending','processing','completed','failed') DEFAULT 'pending',
+  error_message TEXT DEFAULT NULL,
+  attempts INT DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+  INDEX idx_ej_status (status)
+);
+
+-- ── 25. Vector Index (Maps Qdrant IDs to MySQL records) ───────
+CREATE TABLE IF NOT EXISTS vector_index (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  embedding_id VARCHAR(36) NOT NULL UNIQUE COMMENT 'UUID used in Qdrant',
+  file_id INT NOT NULL,
+  chunk_id INT DEFAULT NULL,
+  user_id INT NOT NULL,
+  course_id INT DEFAULT NULL,
+  folder_id INT DEFAULT NULL,
+  topic_id INT DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_vi_file (file_id),
+  INDEX idx_vi_user (user_id)
+);
+
+-- ── 26. AI Query Logs (Vector search query history) ──────────
+CREATE TABLE IF NOT EXISTS ai_query_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  query TEXT NOT NULL,
+  response TEXT DEFAULT NULL,
+  course_id INT DEFAULT NULL,
+  folder_id INT DEFAULT NULL,
+  topic_id INT DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_aql_user (user_id),
+  INDEX idx_aql_created (created_at)
+);
+
