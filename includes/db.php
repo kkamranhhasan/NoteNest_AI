@@ -4,9 +4,15 @@
 // Reads credentials from config constants (set via env vars)
 // ============================================================
 
-// config.php defines DB_SERVER, DB_USERNAME, DB_PASSWORD, DB_NAME
-// Those constants already read from getenv() so Docker env vars work.
-$conn = new mysqli(DB_SERVER, DB_USERNAME, DB_PASSWORD, DB_NAME);
+// config.php defines DB_SERVER, DB_USERNAME, DB_PASSWORD, DB_NAME, DB_PORT
+// Those constants already read from getenv() so Docker/Render env vars work.
+$conn = new mysqli(
+    DB_SERVER,
+    DB_USERNAME,
+    DB_PASSWORD,
+    DB_NAME,
+    defined('DB_PORT') ? (int)DB_PORT : 3306  // TiDB uses port 4000, MySQL uses 3306
+);
 
 if ($conn->connect_error) {
     http_response_code(500);
