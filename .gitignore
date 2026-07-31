@@ -21,17 +21,27 @@ config.local.php
 .env.local
 # .env.example is safe to commit — it has no real secrets
 
-# --- Docker local overrides (keep docker-compose.yml but ignore local override) ---
+# --- Composer vendor (built automatically by Docker/Composer) ---
+vendor/
+phpmailer/
+
+# --- Composer binary (not needed — Dockerfile installs it) ---
+composer
+composer.phar
+
+# --- Docker local overrides ---
 docker-compose.override.yml
 
-# --- Local vector data ---
+# --- Python / ChromaDB (runtime data, not code) ---
 chroma_db/
-
-# --- Python virtual environment ---
 .venv/
 __pycache__/
 *.pyc
 *.pyo
+
+# --- Debug files (security risk — never deploy) ---
+debug_gc.php
+debug_sync_issue.php
 
 # --- PHP / Server ---
 *.log
@@ -53,6 +63,7 @@ Thumbs.db
 # --- Temporary files ---
 *.tmp
 *.bak
+*_backup_temp.sql
 
 # --- PHP sessions ---
 /tmp/
