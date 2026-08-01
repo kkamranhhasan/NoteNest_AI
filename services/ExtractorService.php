@@ -44,9 +44,37 @@ class ExtractorService {
     }
 
     private function extractPdf(string $filePath): string {
-        $parser = new PdfParser();
-        $pdf = $parser->parseFile($filePath);
-        return $pdf->getText();
+        // Lightweight regex stream extraction first (ultra low memory usage)
+        $infile = @file_get_contents($filePath);
+        if (!empty($infile)) {
+            $texts = [];
+            preg_match_all("/stream(.*?)endstream/is", $infile, $matches);
+            foreach ($matches[1] as $match) {
+                $data = @gzuncompress(trim($match));
+                if ($data) {
+                    preg_match_all('/\((.*?)\)\s*T[jJ]/is', $data, $tj2);
+                    if (!empty($tj2[1])) {
+                        foreach ($tj2[1] as $str) {
+                            $texts[] = preg_replace('/\\\\./', '', $str);
+                        }
+                    }
+                }
+            }
+            $rawText = implode(" ", $texts);
+            if (strlen(trim($rawText)) > 50) {
+                return $rawText;
+            }
+        }
+
+        // Fallback to Smalot PDF Parser if regex yields little text
+        try {
+            $parser = new PdfParser();
+            $pdf = $parser->parseFile($filePath);
+            return $pdf->getText();
+        } catch (\Throwable $e) {
+            error_log("PdfParser memory/parse error: " . $e->getMessage());
+            return $rawText ?? '';
+        }
     }
 
     private function extractDocx(string $filePath): string {

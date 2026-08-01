@@ -1,12 +1,12 @@
-# 🗒️ NoteNest — AI-Powered Academic Resource Management Platform
+# 🗒️ NoteNest — AI-Powered Academic Resource Management & Google Classroom Platform
 
 <p align="center">
   <img src="img/fav.ico" alt="NoteNest Logo" width="64"/>
 </p>
 
 <p align="center">
-  <strong>An intelligent, all-in-one academic platform built with Raw PHP, MySQL, Bootstrap 5 & Vanilla JavaScript.</strong><br/>
-  Manage notes, get AI tutoring, generate exams, record lectures, and collaborate — all in one place.
+  <strong>An intelligent, all-in-one academic platform built with PHP, MySQL, Bootstrap 5 & Vanilla JavaScript.</strong><br/>
+  Manage notes, sync with Google Classroom, get AI tutoring, generate exams, record lectures, and track study analytics — all in one place.
 </p>
 
 <p align="center">
@@ -14,80 +14,59 @@
   <img src="https://img.shields.io/badge/MySQL-8.x-4479A1?logo=mysql&logoColor=white"/>
   <img src="https://img.shields.io/badge/Bootstrap-5.3-7952B3?logo=bootstrap&logoColor=white"/>
   <img src="https://img.shields.io/badge/Groq-AI-F55036?logo=openai&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Google_Classroom-API-4285F4?logo=googleclassroom&logoColor=white"/>
   <img src="https://img.shields.io/badge/License-MIT-green"/>
 </p>
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-### 🤖 AI Features (Powered by Groq — Llama 3.3)
+### 🏫 Google Classroom Integration (Full Auto-Sync & AJAX Drill-Down)
 | Feature | Description |
 |---------|-------------|
-| **AI Tutor Chat** | Ask any academic question, get Markdown-formatted answers with chat history |
-| **AI Exam Wizard** | Upload any document → AI generates MCQ + Short Answer questions |
-| **AI Answer Evaluation** | Submit your answers → AI scores and gives per-question feedback |
-| **Study Recommendations** | AI-personalized learning plan and weekly schedule |
-| **Progress Analytics** | Activity heatmap, exam scores, and learning insights |
+| **Google OAuth 2.0** | Connect Google account securely with Google Classroom & Drive read-only permissions |
+| **Course & Topic Sync** | Automatically imports all enrolled courses, topic structure, and syllabus sections |
+| **Material & File Download** | Downloads course attachments directly to NoteNest storage with full file preview support |
+| **Assignment & Task Sync** | Imports assignment titles, descriptions, and due dates into NoteNest To-Do & Calendar |
+| **AJAX Drill-Down Navigator** | Browse Courses → Topics → Files & Assignments seamlessly without page reloads |
+| **AI Assignment Analysis** | Groq AI analyzes assignment text for difficulty score, estimated hours, key concepts & study tips |
+| **Interactive Calendar** | Visual monthly calendar populated automatically with assignment deadlines |
+| **Background Sync & Reminders** | Automated cron jobs keep course materials fresh and send upcoming assignment reminders |
+
+### 🤖 AI Features (Powered by Groq — Llama 3.3 70B & Vector RAG)
+| Feature | Description |
+|---------|-------------|
+| **AI Tutor Chat** | Ask any academic question, get Markdown-formatted answers with persistent chat history |
+| **AI Exam Wizard** | Upload documents/notes → AI generates customized MCQ & Short Answer exams |
+| **AI Answer Evaluation** | Submit exam answers → AI evaluates correctness, scores, and provides detailed feedback |
+| **Study Recommendations** | AI-personalized learning plans, study tips, and weekly schedules |
+| **Progress Analytics** | Activity heatmaps, exam score bar charts, and AI learning insights |
+| **Local RAG Search** | Python ChromaDB microservice for semantic similarity search over study materials |
 
 ### 📁 File & Folder Management
 | Feature | Description |
 |---------|-------------|
-| **Upload Notes** | Upload any file type (PDF, DOCX, images, audio, video, etc.) |
-| **Nested Folders** | Organize files in unlimited nested folder structure |
-| **File Preview** | In-browser preview for PDF, Image, Text, DOCX, XLSX, CSV, Audio, Video |
-| **Download** | One-click download for any file |
-| **Rename & Delete** | Rename or delete files and folders |
-| **Favorites** | Mark files/folders as favorites for quick access |
+| **Upload Notes** | Upload PDF, DOCX, XLSX, images, audio, video, and code files |
+| **Nested Folders** | Unlimited hierarchical folder organization |
+| **In-Browser File Preview** | Native preview for PDFs, Images, TXT, DOCX (Mammoth), XLSX (SheetJS), Audio, Video |
+| **One-Click Download** | Single file or folder material download support |
+| **Favorites & Organization** | Star important files/folders for single-click access |
 
-### 🔗 Sharing System
+### 🔗 Collaboration & Sharing
 | Feature | Description |
 |---------|-------------|
-| **File Sharing** | Share any file with another user by email |
-| **Folder Sharing** | Share folders (recursively shares all sub-content) |
-| **View-Only Access** | Shared users can preview and download only |
-| **Revoke Access** | Remove sharing access at any time |
-| **Shared With Me** | View all files/folders shared with you |
+| **File & Folder Sharing** | Share items with classmates via user email |
+| **Recursive Folder Access** | Sharing a folder grants view-only access to all contained subfolders & files |
+| **Access Control** | Revoke shared access anytime from the share management view |
 
-### 📚 Course Management
+### 🎙️ Lecture Recorder & Productivity
 | Feature | Description |
 |---------|-------------|
-| **Create Courses** | Add courses with name, code, color and description |
-| **Syllabus Topics** | Define topics week-by-week for each course |
-| **Attach Materials** | Link uploaded files directly to course topics |
-| **Course Overview** | See all materials organized under their course |
-
-### ✅ Task & Productivity
-| Feature | Description |
-|---------|-------------|
-| **Todo List** | Create tasks with priority (High/Medium/Low) and deadlines |
-| **Task Reminders** | Automated notifications for upcoming tasks (via cron) |
-| **Completion Tracking** | Mark tasks done and track completion rate |
-
-### 🎙️ Lecture Recorder
-| Feature | Description |
-|---------|-------------|
-| **Browser Recording** | Record audio lectures directly in the browser |
-| **Waveform Visualizer** | Real-time audio waveform while recording |
-| **Auto-Save** | Recordings saved to your file library automatically |
-
-### 📊 Dashboard & Analytics
-| Feature | Description |
-|---------|-------------|
-| **Activity Graph** | 7-day study activity chart (Chart.js) |
-| **Performance Metrics** | Quiz/exam score bar chart |
-| **Todo Donut Chart** | Task completion rate visualization |
-| **Recent Activity Feed** | Timeline of your uploads, chats, exams |
-
-### 👤 Authentication & Profile
-| Feature | Description |
-|---------|-------------|
-| **Register & Login** | Secure registration with SMTP email verification |
-| **Email Verification** | Verification link sent via Gmail SMTP (PHPMailer) |
-| **Resend Verification** | Request a new verification email if link expires |
-| **Profile Photo** | Upload profile picture at signup, shown everywhere |
-| **Profile Management** | Edit name, phone, gender, password |
-| **Notifications** | Real-time notification bell with unread count |
+| **In-Browser Audio Recorder** | Record lectures with real-time waveform visualization |
+| **Auto-Save Recordings** | Recorded audio auto-saves straight to your NoteNest file library |
+| **To-Do Management** | Task checklist with priority tags (High/Medium/Low) and due dates |
+| **Automated Reminders** | Cron-triggered email & notification alerts for pending tasks & assignments |
 
 ---
 
@@ -95,249 +74,251 @@
 
 | Layer | Technology |
 |-------|-----------|
-| **Backend** | Raw PHP 8.x (no framework) |
+| **Backend Core** | PHP 8.x (Raw PHP, no heavy framework overhead) |
 | **Database** | MySQL 8.x with MySQLi prepared statements |
-| **Frontend** | Bootstrap 5.3, Vanilla JavaScript, AJAX/Fetch API |
-| **AI Engine** | Groq API (Llama 3.3 70B) |
-| **Charts** | Chart.js |
-| **DOCX Preview** | Mammoth.js |
-| **XLSX Preview** | SheetJS (xlsx.js) |
-| **Email** | PHPMailer + Gmail SMTP |
-| **Icons** | Font Awesome 6 |
-| **Fonts** | Google Fonts (Inter) |
+| **Frontend** | Bootstrap 5.3, Vanilla JavaScript, jQuery, AJAX |
+| **AI Processing** | Groq API (`llama-3.3-70b-versatile`) |
+| **Vector DB / RAG** | ChromaDB (Python FastAPI microservice) |
+| **Integrations** | Google Classroom API & Google Drive API (OAuth 2.0) |
+| **Email Service** | PHPMailer + Gmail SMTP |
+| **Document Parsing** | Mammoth.js (DOCX), SheetJS (XLSX/CSV), PDF.js |
+| **Visualizations** | Chart.js |
 
 ---
 
 ## 🚀 Installation & Setup
 
 ### Prerequisites
-- XAMPP (or any Apache + PHP 8.x + MySQL stack)
-- PHP 8.0 or higher
-- MySQL 8.0 or higher
-- Internet connection (for Groq API, CDN libraries, SMTP)
+- XAMPP / WAMP / MAMP (PHP 8.0+ & MySQL 8.0+)
+- Python 3.9+ (Required for ChromaDB vector search service)
+- Google Cloud Console Project (Required for Google Classroom Integration)
+- Groq API Key (Required for AI features)
 
-### Step 1 — Clone the Repository
+---
+
+### Step 1 — Clone Repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/NoteNest.git
+git clone https://github.com/kkamranhasan/NoteNest.git
 cd NoteNest
 ```
 
-### Step 2 — Place in Web Server Root
-```
-XAMPP (macOS):  /Applications/XAMPP/xamppfiles/htdocs/NoteNest-main/
-XAMPP (Windows): C:\xampp\htdocs\NoteNest-main\
-```
+---
 
-### Step 3 — Create the Database
-1. Open **phpMyAdmin** → `http://localhost/phpmyadmin`
+### Step 2 — Place in Web Server Directory
+Place the repository in your web server root directory:
+- **XAMPP (macOS):** `/Applications/XAMPP/xamppfiles/htdocs/NoteNest-main/`
+- **XAMPP (Windows):** `C:\xampp\htdocs\NoteNest-main\`
+
+---
+
+### Step 3 — Database Setup
+1. Open **phpMyAdmin** (`http://localhost/phpmyadmin`)
 2. Create a new database named `notenest`
-3. Import the schema file: **`database.sql`** (root of project)
+3. Import the main schema: **`database.sql`**
+4. Import any missing migrations if necessary: **`migration_add_missing_tables.sql`**
 
-### Step 4 — Configure the App
+---
+
+### Step 4 — Environment Configuration
+Create your local environment file:
 ```bash
 cp config.example.php config.php
 ```
 
-Open `config.php` and fill in your values:
+Open `config.php` and configure database, email, AI, and Google OAuth credentials:
+
 ```php
-// Database
+// Database Credentials
 define('DB_SERVER',   'localhost');
 define('DB_USERNAME', 'root');
 define('DB_PASSWORD', '');
 define('DB_NAME',     'notenest');
 
-// Gmail SMTP (for email verification)
+// App URL
+define('APP_URL', 'http://localhost/NoteNest-main');
+
+// SMTP Email Settings (Google App Password)
 define('MAIL_HOST',     'smtp.gmail.com');
 define('MAIL_USERNAME', 'your_email@gmail.com');
-define('MAIL_PASSWORD', 'your_gmail_app_password');  // 16-char App Password
+define('MAIL_PASSWORD', 'your_16_char_app_password');
 define('MAIL_PORT',     587);
-define('APP_URL',       'http://localhost/NoteNest-main');
 
-// Groq AI
-define('GROQ_API_KEY', 'your_groq_api_key_here');
+// Groq AI API Key
+define('GROQ_API_KEY', 'gsk_your_groq_api_key');
 define('GROQ_MODEL',   'llama-3.3-70b-versatile');
+
+// Google Classroom OAuth 2.0 Credentials
+define('GOOGLE_CLIENT_ID',     'your_google_client_id.apps.googleusercontent.com');
+define('GOOGLE_CLIENT_SECRET', 'your_google_client_secret');
+define('GOOGLE_REDIRECT_URI',  APP_URL . '/google_callback.php');
 ```
-
-> ⚠️ Never commit `config.php` to GitHub — it is listed in `.gitignore`.
-
-### Step 5 — Set Folder Permissions
-```bash
-chmod 777 uploads/notes/
-chmod 777 uploads/recordings/
-chmod 777 img/user_photos/
-```
-
-### Step 6 — Access the App
-```
-http://localhost/NoteNest-main/login.php
-```
-
-Register a new account → check email for verification link → login → dashboard.
-
-### Step 7 — Set Up Todo Reminders (Optional)
-Add a cron job to run every hour:
-```
-0 * * * * php /path/to/NoteNest-main/cron/todo_reminder.php
-```
-
-### Step 8 — Start ChromaDB Local Vector Service (Required for RAG)
-NoteNest employs a local Python **ChromaDB** microservice for semantic similarity vector search. Start the service by running:
-```bash
-# Initialize Python virtual environment & install dependencies (first time only)
-python3 -m venv .venv
-./.venv/bin/pip install chromadb
-
-# Start the local HTTP vector DB service
-./.venv/bin/python chroma_service.py
-```
-The service runs locally at `http://127.0.0.1:8000/`. The PHP core communicates with it via cURL. If the Python service is offline, the system automatically falls back to database-level lexical similarity matching.
-
-### 🐳 Step 9 — Docker Deployment (Recommended for Cloud Hosting)
-For cloud hosting (AWS, VPS, Render, etc.), you can orchestrate the entire stack (PHP, MySQL, and ChromaDB) using Docker Compose:
-```bash
-# Start all containers in the background
-docker-compose up --build -d
-
-# Verify containers are running
-docker-compose ps
-```
-Once built, the web application will be accessible at `http://localhost:8080/login.php`, the ChromaDB vector database will run internally at `http://chroma:8000/`, and data persistence volumes will automatically map MySQL data and Chroma embeddings.
 
 ---
 
-## 📂 Project Structure
+### Step 5 — Google Cloud Console Setup (Classroom API)
+1. Go to [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new project named **NoteNest**.
+3. Enable the following APIs under **APIs & Services**:
+   - Google Classroom API
+   - Google Drive API
+4. Configure **OAuth consent screen** (User type: External / Test).
+5. Create **OAuth 2.0 Client IDs** (Application type: Web application):
+   - **Authorized redirect URIs:** `http://localhost/NoteNest-main/google_callback.php`
+6. Copy the **Client ID** and **Client Secret** into your `config.php`.
+
+---
+
+### Step 6 — Directory Permissions
+Ensure upload folders exist and have write permissions:
+```bash
+mkdir -p uploads/notes uploads/recordings img/user_photos
+chmod -R 777 uploads img/user_photos
+```
+
+---
+
+### Step 7 — Run Local Vector Microservice (ChromaDB)
+To enable AI Semantic Document Search & RAG:
+```bash
+# Set up Python virtual environment
+python3 -m venv .venv
+./.venv/bin/pip install chromadb fastapi uvicorn pydantic
+
+# Start ChromaDB microservice on port 8000
+./.venv/bin/python chroma_service.py
+```
+
+---
+
+### Step 8 — Set Up Automated Background Cron Jobs (Optional)
+To enable automated background syncs and task/assignment reminders:
+```bash
+# Add to crontab (crontab -e)
+# Run task reminders every hour
+0 * * * * /usr/bin/php /path/to/NoteNest-main/cron/todo_reminder.php >/dev/null 2>&1
+
+# Run Google Classroom background sync every 6 hours
+0 */6 * * * /usr/bin/php /path/to/NoteNest-main/cron/google_sync.php >/dev/null 2>&1
+
+# Send Google Classroom assignment reminders daily at 8 AM
+0 8 * * * /usr/bin/php /path/to/NoteNest-main/cron/google_reminders.php >/dev/null 2>&1
+```
+
+---
+
+### Step 9 — Docker Setup (Alternative Quick Start)
+You can run the entire application using Docker Compose:
+```bash
+docker-compose up --build -d
+```
+Access the application at `http://localhost:8080/login.php`.
+
+---
+
+## 📂 Project Directory Structure
 
 ```
 NoteNest-main/
 │
-├── 📄 dashboard.php                 — Main dashboard (entry after login)
-├── 📄 login.php                     — User login
-├── 📄 register.php                  — User registration + profile photo
-├── 📄 logout.php                    — Session logout
-├── 📄 verify_email.php              — Email verification (confirm button)
-├── 📄 resend_verification.php       — Resend verification email
+├── 📄 dashboard.php                 — Main Dashboard (Quick stats, Google Classroom card, Recent activity)
+├── 📄 google_classroom.php          — Google Classroom Hub (Courses, Topics, Files, Assignments, Calendar, Sync logs)
+├── 📄 google_auth.php               — Google OAuth 2.0 Auth Redirect handler
+├── 📄 google_callback.php           — Google OAuth 2.0 Access/Refresh Token Exchange handler
+├── 📄 google_disconnect.php         — Disconnect Google Account handler
+├── 📄 dashboard_gc_ajax.php         — AJAX endpoint for Google Classroom dynamic course/topic/file drill-down
 │
-├── 📄 my_note_nest.php              — Personal files & folders
-├── 📄 shared_note_nest.php          — Files shared with me
-├── 📄 favorites.php                 — Starred files/folders
-├── 📄 note_preview.php              — File preview API
-├── 📄 note_download.php             — File download handler
-├── 📄 sync_storage_ajax.php         — Storage sync utility
+├── 📄 my_note_nest.php              — Personal File & Folder Explorer
+├── 📄 shared_note_nest.php          — Files & Folders Shared With Me
+├── 📄 favorites.php                 — Starred Files & Folders
+├── 📄 note_preview.php              — Document & Media Preview Modal API
+├── 📄 note_download.php             — File Download Manager
+├── 📄 sync_storage_ajax.php         — Real-time Storage Usage Sync Endpoint
 │
-├── 📄 course_management.php         — Course & syllabus management
-├── 📄 todo.php                      — Task management
-├── 📄 notifications.php             — Notification center (AJAX)
-├── 📄 profile.php                   — User profile editor
+├── 📄 ai_tutor.php                  — Groq-Powered Interactive AI Academic Tutor
+├── 📄 ai_exam.php                   — Automated Exam Generation & AI Grading System
+├── 📄 study_recommendations.php     — AI Learning Schedule & Plan Generator
+├── 📄 progress_analytics.php        — Analytics Dashboard (Chart.js Heatmaps & Scores)
+├── 📄 lecture_recorder.php          — Audio Lecture Recorder with Waveform Visualizer
 │
-├── 📄 ai_tutor.php                  — AI Chat Tutor
-├── 📄 ai_exam.php                   — AI Exam Generator & Evaluator
-├── 📄 study_recommendations.php     — AI study plan
-├── 📄 progress_analytics.php        — Learning analytics
-├── 📄 lecture_recorder.php          — In-browser lecture recorder
+├── 📄 course_management.php         — Manual Course & Syllabus Management
+├── 📄 todo.php                      — Task & Assignment Manager
+├── 📄 notifications.php             — System Notification Center Endpoint
+├── 📄 profile.php                   — User Profile & Password Editor
 │
-├── 📄 share.php                     — Share file/folder handler
-├── 📄 share_management.php          — Manage shared access
+├── 📄 login.php                     — Login Page
+├── 📄 register.php                  — Registration Page with Avatar Upload
+├── 📄 verify_email.php              — Email Verification Endpoint
+├── 📄 resend_verification.php       — Resend Verification Link Handler
+├── 📄 logout.php                    — Logout Session Handler
 │
-├── 📄 config.example.php            — Config template (copy → config.php)
-├── 📄 database.sql                  — Full database schema
+├── 📄 config.example.php            — Environment Configuration Template
+├── 📄 database.sql                  — Primary Database Schema
+├── 📄 migration_add_missing_tables.sql — Schema Updates & Foreign Keys
+├── 📄 chroma_service.py             — Python FastAPI Microservice for ChromaDB Vector Search
+├── 📄 Dockerfile / docker-compose.yml — Docker Deployment Files
 │
-├── 📁 includes/
-│   ├── auth.php                     — Session auth guard
-│   ├── db.php                       — Database connection
-│   ├── navbar.php                   — Navigation bar
-│   ├── send_email.php               — PHPMailer verification emails
-│   ├── ai_service.php               — Groq AI service layer
-│   └── functions.php                — Shared utility functions
+├── 📁 includes/                     — Core Backend Helpers & Service Engines
+│   ├── auth.php                     — Session Guard & Access Protection
+│   ├── db.php                       — Database Connection Handler
+│   ├── navbar.php                   — Main Top Navigation Bar
+│   ├── footer.php                   — Shared Page Footer
+│   ├── functions.php                — General Utility Functions
+│   ├── ai_service.php               — Groq AI API Wrapper
+│   ├── google_classroom_service.php — Google Classroom & Drive API Client
+│   ├── google_sync_engine.php       — Background Data Sync Engine
+│   ├── google_ai_analyzer.php       — AI Assignment & Material Analyzer
+│   ├── google_reminder_engine.php   — Classroom Notification & Reminder Generator
+│   └── send_email.php               — PHPMailer SMTP Email Helper
 │
-├── 📁 css/                          — Page-specific stylesheets
-├── 📁 phpmailer/                    — PHPMailer library
-├── 📁 img/
-│   └── user_photos/                 — Profile pictures
-│
-├── 📁 uploads/
-│   ├── notes/                       — Uploaded study files
-│   └── recordings/                  — Lecture recordings
-│
-└── 📁 cron/
-    └── todo_reminder.php            — Scheduled reminder script
+├── 📁 css/                          — Modular CSS Files for Each View
+├── 📁 cron/                         — Background Scheduled Tasks
+├── 📁 uploads/                      — Storage Directory for User Files & Media
+└── 📁 phpmailer/                    — Email Delivery Library
 ```
 
 ---
 
-## 🗄️ Database Tables
+## 🗄️ Database Architecture
 
-| Table | Purpose |
-|-------|---------|
-| `users` | User accounts, profile photos, email verification tokens |
-| `folders` | Nested folder structure |
-| `files` | Uploaded files metadata |
-| `shared_access` | File/folder sharing records |
-| `favorites` | Starred items |
-| `todos` | Task list items |
-| `todo_notifications` | Reminder tracking |
-| `notifications` | System notifications |
-| `courses` | Academic courses |
-| `course_topics` | Syllabus topics per course |
-| `file_course_tags` | Files linked to course topics |
-| `ai_chat_history` | AI Tutor conversation history |
-| `ai_evaluations` | Exam results and AI feedback |
-| `user_progress` | Activity tracking for analytics |
-| `lecture_recordings` | Recorded lecture metadata |
-
----
-
-## 📧 Email Verification Flow
-
-1. User registers on `register.php`
-2. Account created with `is_verified = 0`
-3. Verification email sent via Gmail SMTP (`includes/send_email.php`)
-4. User clicks link → `verify_email.php` → clicks **Verify Email** button
-5. Account activated → user can login
-
-If the link expires (24 hours), use `resend_verification.php` to get a new one.
+| Table Name | Description |
+|------------|-------------|
+| `users` | User credentials, avatar photos, verification status, and tokens |
+| `folders` | Hierarchical directory tree for note storage |
+| `files` | Uploaded document metadata, mime types, file sizes, and paths |
+| `favorites` | User-starred files and folders for quick access |
+| `shared_access` | Permission matrix for file and folder sharing |
+| `google_accounts` | Google OAuth tokens, connected account email, sync state |
+| `google_courses` | Synced Google Classroom course metadata |
+| `google_topics` | Course topics and syllabus modules |
+| `google_files` | Classroom attachments and Drive materials linked to local files |
+| `google_assignments` | Classroom assignments, due dates, and AI analysis data |
+| `google_sync_logs` | Audit trail of manual and background sync executions |
+| `calendar_events` | Aggregated calendar events and assignment deadlines |
+| `todos` / `todo_notifications` | User tasks, priority flags, and reminder delivery status |
+| `courses` / `course_topics` | Manual course and syllabus structures |
+| `ai_chat_history` | Persistent chat logs with the AI Tutor |
+| `ai_evaluations` | AI exam scores, submission details, and feedback breakdown |
+| `user_progress` | User activity logs used for progress analytics |
 
 ---
 
-## 🔒 Security
+## 🔒 Security Measures
 
-- ✅ All DB queries use **prepared statements** (SQL injection safe)
-- ✅ **Password hashing** with `password_hash()` / `password_verify()`
-- ✅ **Email verification** required before login
-- ✅ **Verification tokens** expire after 24 hours
-- ✅ **Session-based authentication** with auth guard on every page
-- ✅ **File ownership checks** — users can only access their own data
-- ✅ **Input validation & sanitization** on all forms
-- ✅ **XSS protection** with `htmlspecialchars()` on all output
+- **SQL Injection Safeguards:** 100% of database operations use MySQLi prepared statements with bound parameters.
+- **Authentication Protection:** Session guards (`includes/auth.php`) protect all internal application routes.
+- **Password Hashing:** Passwords are standardly hashed using `password_hash()` (Bcrypt).
+- **OAuth 2.0 Security:** Google Tokens stored securely per user with automated expiration refresh.
+- **XSS Prevention:** Output data sanitization via `htmlspecialchars()` across UI elements.
+- **Access Authorization:** Strict ownership and share-permission validation before file access/download.
 
 ---
 
-## 🔑 API Keys
+## 👥 Contributors
 
-### Groq AI (required for AI features)
-1. Go to [https://console.groq.com/keys](https://console.groq.com/keys)
-2. Create a free API key
-3. Paste it in `config.php` as `GROQ_API_KEY`
-
-### Gmail App Password (required for email verification)
-1. Enable 2-Step Verification on your Google Account
-2. Go to **Google Account → Security → App Passwords**
-3. Generate a 16-character app password
-4. Paste it in `config.php` as `MAIL_PASSWORD`
-
----
-
-## 👥 Team / Contributors
-
-- [@kkamranhasan](https://github.com/kkamranhasan) — AI integration, File Management, UI/UX
+- **Kamran Hasan** ([@kkamranhasan](https://github.com/kkamranhasan)) — Lead Developer & Architect
 
 ---
 
 ## 📝 License
 
-MIT License © 2025 NoteNest Team
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software to use, copy, modify, merge, publish, and distribute it, subject to the condition that the above copyright notice is included in all copies.
-
----
-
-<p align="center">Made with ❤️ for academic excellence</p>
+This project is licensed under the **MIT License**.

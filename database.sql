@@ -3,8 +3,9 @@
 -- Version 2.0 | Updated for AI-Powered Features
 -- ============================================================
 
-CREATE DATABASE IF NOT EXISTS notenest CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE notenest;
+-- CREATE DATABASE IF NOT EXISTS notenest CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- USE notenest;
+
 
 -- ── 1. Users ──────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (

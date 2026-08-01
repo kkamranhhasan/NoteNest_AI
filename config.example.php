@@ -27,8 +27,17 @@ define('DB_NAME',     getenv('DB_NAME')     ?: 'notenest');
 define('MAIL_HOST',     getenv('MAIL_HOST')     ?: 'smtp.gmail.com');
 define('MAIL_USERNAME', getenv('MAIL_USERNAME') ?: 'your_email@gmail.com');
 define('MAIL_PASSWORD', getenv('MAIL_PASSWORD') ?: 'your_16char_app_password');
-define('MAIL_PORT',     getenv('MAIL_PORT')     ?: 587);
-define('APP_URL',       getenv('APP_URL')       ?: 'http://localhost/NoteNest-main');
+// ── App URL (Auto-detected for local & production) ──
+if (!defined('APP_URL')) {
+    if (isset($_SERVER['HTTP_HOST'])) {
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ? 'https' : 'http';
+        $scriptDir = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\');
+        $path = ($scriptDir === '.' || $scriptDir === '/') ? '' : $scriptDir;
+        define('APP_URL', $scheme . '://' . $_SERVER['HTTP_HOST'] . $path);
+    } else {
+        define('APP_URL', getenv('APP_URL') ?: 'http://localhost/NoteNest-main');
+    }
+}
 
 // ── Groq AI API ────────────────────────────────────────────
 // Get key from: https://console.groq.com/

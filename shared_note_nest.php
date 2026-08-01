@@ -1,5 +1,6 @@
 <?php
 require 'includes/auth.php';
+require_once 'config.php';
 require 'includes/db.php';
 $user_id = $_SESSION['user_id'];
 $modal_message = '';
@@ -82,7 +83,9 @@ $breadcrumbs = get_shared_folder_path($conn, $current_folder_id, $user_id);
 // Get favorites for this user
 $fav_ids = ['file'=>[], 'folder'=>[]];
 $res = $conn->query("SELECT item_type, item_id FROM favorites WHERE user_id=$user_id");
-while ($row = $res->fetch_assoc()) $fav_ids[$row['item_type']][] = $row['item_id'];
+if ($res) {
+    while ($row = $res->fetch_assoc()) $fav_ids[$row['item_type']][] = $row['item_id'];
+}
 if (isset($_SESSION['success_msg'])) {
     $modal_message = $_SESSION['success_msg'];
     unset($_SESSION['success_msg']);
@@ -165,9 +168,17 @@ if ($modal_message) {
           <?php endforeach; ?>
         </ul>
       <?php endif; ?>
-      <!-- NOTES HEADING -->
+      <?php 
+        $current_folder_label = '';
+        if ($current_folder_id !== null && !empty($breadcrumbs)) {
+            $last_bc = end($breadcrumbs);
+            if (is_array($last_bc) && isset($last_bc['name'])) {
+                $current_folder_label = ' in "' . htmlspecialchars($last_bc['name']) . '"';
+            }
+        }
+      ?>
       <div class="section-heading mb-2" style="margin-top:32px;">
-        <i class="fas fa-note-sticky"></i> Shared Notes<?= ($current_folder_id !== null)? ' in "' . htmlspecialchars(end($breadcrumbs)['name']) . '"' : '' ?>
+        <i class="fas fa-note-sticky"></i> Shared Notes<?= $current_folder_label ?>
       </div>
       <div class="card">
         <div class="card-body table-responsive">
@@ -185,7 +196,9 @@ if ($modal_message) {
                 </tr>
               </thead>
               <tbody>
-                <?php foreach($files as $index=>$n): ?>
+                <?php foreach($files as $index=>$n): 
+                  $mime = $n[3] ?? '';
+                ?>
                 <tr>
                   <th><?= $index+1 ?></th>
                   <td><?= htmlspecialchars($n[1]) ?></td>
@@ -195,17 +208,17 @@ if ($modal_message) {
                     <a href="note_download.php?id=<?= $n[0] ?>" title="Download" class="btn btn-sm btn-outline-secondary me-1">
                       <i class="fas fa-download"></i>
                     </a>
-                    <?php if (strpos($n[3], 'image/') === 0): ?>
+                    <?php if (strpos($mime, 'image/') === 0): ?>
                       <button type="button" class="btn btn-sm btn-outline-info me-1 preview-btn"
                               data-file="<?= htmlspecialchars($n[2]) ?>" data-name="<?= htmlspecialchars($n[1]) ?>" data-type="image" title="Preview">
                         <i class="fas fa-eye"></i>
                       </button>
-                    <?php elseif (strpos($n[3], 'text/') === 0): ?>
+                    <?php elseif (strpos($mime, 'text/') === 0): ?>
                       <button type="button" class="btn btn-sm btn-outline-info me-1 preview-btn"
                               data-file="<?= htmlspecialchars($n[2]) ?>" data-name="<?= htmlspecialchars($n[1]) ?>" data-type="text" title="Preview">
                         <i class="fas fa-eye"></i>
                       </button>
-                    <?php elseif (strpos($n[3], 'application/pdf') === 0): ?>
+                    <?php elseif (strpos($mime, 'application/pdf') === 0): ?>
                       <button type="button" class="btn btn-sm btn-outline-info me-1 preview-btn"
                               data-file="<?= htmlspecialchars($n[2]) ?>" data-name="<?= htmlspecialchars($n[1]) ?>" data-type="pdf" title="Preview">
                         <i class="fas fa-eye"></i>

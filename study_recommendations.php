@@ -251,7 +251,7 @@ $top_weak_areas = array_slice(array_keys($weak_freq), 0, 6);
                 <button class="btn-generate" id="btnGenerate" onclick="generateRecommendations()">
                     <i class="fas fa-robot"></i><span>Generate My Plan</span>
                 </button>
-                <div class="mt-2 text-center" style="font-size:.74rem;color:#bbb;"><i class="fas fa-lock me-1"></i>Powered by Google Gemini AI</div>
+                <div class="mt-2 text-center" style="font-size:.74rem;color:#bbb;"><i class="fas fa-lock me-1"></i>Powered by Groq AI (Llama 3.3)</div>
             </div>
 
             <div class="glass-card">

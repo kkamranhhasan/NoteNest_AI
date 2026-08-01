@@ -35,20 +35,35 @@ function gc_get_auth_url(): string {
         'redirect_uri'  => APP_URL . '/google_callback.php',
         'response_type' => 'code',
         'scope'         => implode(' ', [
+            'openid',
+            'email',
+            'profile',
             'https://www.googleapis.com/auth/classroom.courses.readonly',
             'https://www.googleapis.com/auth/classroom.topics.readonly',
             'https://www.googleapis.com/auth/classroom.coursework.me.readonly',
             'https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly',
             'https://www.googleapis.com/auth/classroom.announcements.readonly',
             'https://www.googleapis.com/auth/drive.readonly',
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
         ]),
         'access_type'   => 'offline',
         'prompt'        => 'consent',
         'state'         => session_id(),
     ];
     return 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query($params);
+}
+
+/**
+ * Get Privacy Policy URL for Google Verification compliance.
+ */
+function gc_get_privacy_url(): string {
+    return APP_URL . '/privacy.php';
+}
+
+/**
+ * Get Terms of Service URL for Google Verification compliance.
+ */
+function gc_get_terms_url(): string {
+    return APP_URL . '/terms.php';
 }
 
 /**
@@ -232,7 +247,8 @@ function gc_fetch_coursework(string $accessToken, string $courseId): array {
     $allWork   = [];
     $pageToken = '';
     do {
-        $url = "https://classroom.googleapis.com/v1/courses/{$courseId}/courseWork?pageSize=100&orderBy=" . urlencode('dueDate asc');
+        // Note: orderBy is NOT a supported parameter for courseWork.list in Classroom API v1
+        $url = "https://classroom.googleapis.com/v1/courses/{$courseId}/courseWork?pageSize=100";
         if ($pageToken) $url .= '&pageToken=' . urlencode($pageToken);
 
         $data = gc_api_get($url, $accessToken);
@@ -320,14 +336,23 @@ function gc_download_drive_file(string $accessToken, string $fileId, string $mim
         'application/vnd.google-apps.drawing'       => ['mime' => 'image/png',       'ext' => 'png'],
     ];
 
+    // If mimeType is unknown, try fetching metadata from Drive API
+    if (!$mimeType && $fileId) {
+        $info = gc_get_drive_file_info($accessToken, $fileId);
+        $mimeType = $info['mimeType'] ?? '';
+        if (!$title && !empty($info['name'])) {
+            $title = $info['name'];
+        }
+    }
+
     // Determine if this is a Google Workspace file that needs export
     if (isset($exportMap[$mimeType])) {
         $export   = $exportMap[$mimeType];
-        $url      = "https://www.googleapis.com/drive/v3/files/{$fileId}/export?mimeType=" . urlencode($export['mime']);
+        $url      = "https://www.googleapis.com/drive/v3/files/{$fileId}/export?mimeType=" . urlencode($export['mime']) . "&supportsAllDrives=true";
         $dlMime   = $export['mime'];
         $filename = pathinfo($title, PATHINFO_FILENAME) . '.' . $export['ext'];
     } else {
-        $url      = "https://www.googleapis.com/drive/v3/files/{$fileId}?alt=media";
+        $url      = "https://www.googleapis.com/drive/v3/files/{$fileId}?alt=media&supportsAllDrives=true";
         $dlMime   = $mimeType;
         $filename = $title ?: $fileId;
     }
@@ -336,7 +361,7 @@ function gc_download_drive_file(string $accessToken, string $fileId, string $mim
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $accessToken],
-        CURLOPT_TIMEOUT        => 120,
+        CURLOPT_TIMEOUT        => 25,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_MAXREDIRS      => 5,
         CURLOPT_SSL_VERIFYPEER => (defined('APP_ENV') && APP_ENV === 'local') ? false : true,
@@ -348,6 +373,35 @@ function gc_download_drive_file(string $accessToken, string $fileId, string $mim
     curl_close($ch);
 
     if ($err) return ['success' => false, 'error' => 'cURL: ' . $err];
+
+    // If alt=media returned 403 or 400 (e.g. Google Docs file), attempt PDF export fallback
+    if (($httpCode === 403 || $httpCode === 400) && !isset($exportMap[$mimeType])) {
+        $exportUrl = "https://www.googleapis.com/drive/v3/files/{$fileId}/export?mimeType=application/pdf&supportsAllDrives=true";
+        $ch2 = curl_init($exportUrl);
+        curl_setopt_array($ch2, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $accessToken],
+            CURLOPT_TIMEOUT        => 25,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => (defined('APP_ENV') && APP_ENV === 'local') ? false : true,
+        ]);
+        $exportContent = curl_exec($ch2);
+        $exportHttp    = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+        curl_close($ch2);
+
+        if ($exportHttp === 200) {
+            return [
+                'success'   => true,
+                'content'   => $exportContent,
+                'mime_type' => 'application/pdf',
+                'filename'  => pathinfo($title, PATHINFO_FILENAME) . '.pdf',
+                'size'      => strlen($exportContent),
+                'error'     => '',
+            ];
+        }
+    }
+
+
     if ($httpCode !== 200) {
         $errData = json_decode($content, true);
         return ['success' => false, 'error' => 'HTTP ' . $httpCode . ': ' . ($errData['error']['message'] ?? substr($content, 0, 200))];
@@ -359,7 +413,7 @@ function gc_download_drive_file(string $accessToken, string $fileId, string $mim
     return [
         'success'   => true,
         'content'   => $content,
-        'mime_type' => $dlMime,
+        'mime_type' => $dlMime ?: 'application/octet-stream',
         'filename'  => $filename,
         'size'      => $fileSize,
         'error'     => '',
@@ -370,9 +424,10 @@ function gc_download_drive_file(string $accessToken, string $fileId, string $mim
  * Get file metadata from Google Drive.
  */
 function gc_get_drive_file_info(string $accessToken, string $fileId): array {
-    $url = "https://www.googleapis.com/drive/v3/files/{$fileId}?fields=id,name,mimeType,size,modifiedTime";
+    $url = "https://www.googleapis.com/drive/v3/files/{$fileId}?fields=id,name,mimeType,size,modifiedTime&supportsAllDrives=true";
     return gc_api_get($url, $accessToken);
 }
+
 
 /**
  * Generic Google API GET request.
@@ -461,11 +516,17 @@ function gc_get_account(mysqli $conn, int $userId) {
  * Update sync status for a user.
  */
 function gc_update_sync_status(mysqli $conn, int $userId, string $status, ?string $error = null): void {
+    // Reconnect if MySQL dropped during long sync
+    if (function_exists('db_reconnect')) db_reconnect($conn);
+    if (!$conn || $conn->connect_error) return;
+
     if ($error) {
         $stmt = $conn->prepare("UPDATE google_accounts SET sync_status = ?, sync_error = ?, last_sync_at = NOW() WHERE user_id = ?");
+        if (!$stmt) return;
         $stmt->bind_param('ssi', $status, $error, $userId);
     } else {
         $stmt = $conn->prepare("UPDATE google_accounts SET sync_status = ?, sync_error = NULL, last_sync_at = NOW() WHERE user_id = ?");
+        if (!$stmt) return;
         $stmt->bind_param('si', $status, $userId);
     }
     $stmt->execute();

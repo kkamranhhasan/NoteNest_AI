@@ -9,6 +9,18 @@ require 'config.php';
 require 'includes/ai_service.php';
 
 $user_id = $_SESSION['user_id'];
+require_once 'includes/db.php';
+// Note: Indexing is deferred — runs only when files are uploaded, not on page load
+// to prevent memory exhaustion on shared hosting (InfinityFree 512MB limit)
+if (file_exists(__DIR__ . '/includes/google_sync_engine.php')) {
+    if (function_exists('db_reconnect')) db_reconnect($conn);
+    require_once __DIR__ . '/includes/google_sync_engine.php';
+    if (empty($_SESSION['gc_repaired_' . $user_id])) {
+        gc_repair_and_link_courses($conn, $user_id);
+        $_SESSION['gc_repaired_' . $user_id] = true;
+    }
+}
+
 
 // ── Helper: extract readable text from a file ─────────────────
 function extractFileText(string $filePath, string $mimeType): string {
@@ -271,26 +283,44 @@ foreach ($courseRows as $cr) {
     $tq->bind_param('i', $cr['id']); $tq->execute();
     $cr['topics'] = $tq->get_result()->fetch_all(MYSQLI_ASSOC);
     $tq->close();
-    // files for each topic
+    // files for each topic (folder files + tagged files)
     foreach ($cr['topics'] as &$tp) {
+        $topicFiles = [];
         if ($tp['folder_id']) {
             $ffq = $conn->prepare("SELECT id, name, file_path, mime_type FROM files WHERE folder_id=? AND owner_id=? ORDER BY created_at DESC");
             $ffq->bind_param('ii', $tp['folder_id'], $user_id); $ffq->execute();
-            $tp['files'] = $ffq->get_result()->fetch_all(MYSQLI_ASSOC);
-            $ffq->close();
-        } else {
-            // fallback: files tagged to course+topic
-            $ffq = $conn->prepare(
-                "SELECT f.id, f.name, f.file_path, f.mime_type
-                 FROM file_course_tags fct JOIN files f ON fct.file_id=f.id
-                 WHERE fct.course_id=? AND fct.topic_id=? AND f.owner_id=?"
-            );
-            $ffq->bind_param('iii', $cr['id'], $tp['id'], $user_id); $ffq->execute();
-            $tp['files'] = $ffq->get_result()->fetch_all(MYSQLI_ASSOC);
+            $topicFiles = $ffq->get_result()->fetch_all(MYSQLI_ASSOC);
             $ffq->close();
         }
+        // Also pick up files tagged to this course+topic (even if no folder)
+        $ffq2 = $conn->prepare(
+            "SELECT f.id, f.name, f.file_path, f.mime_type
+             FROM file_course_tags fct JOIN files f ON fct.file_id=f.id
+             WHERE fct.course_id=? AND fct.topic_id=? AND f.owner_id=?
+               AND f.id NOT IN (SELECT id FROM files WHERE folder_id=?)"
+        );
+        $folderIdFallback = $tp['folder_id'] ?: 0;
+        $ffq2->bind_param('iiii', $cr['id'], $tp['id'], $user_id, $folderIdFallback); $ffq2->execute();
+        $extra = $ffq2->get_result()->fetch_all(MYSQLI_ASSOC);
+        $ffq2->close();
+        $tp['files'] = array_merge($topicFiles, $extra);
     }
     unset($tp);
+
+    // Also include course-level files (no specific topic) via files.course_id
+    $cfq = $conn->prepare(
+        "SELECT f.id, f.name, f.file_path, f.mime_type
+         FROM files f
+         WHERE f.course_id=? AND f.owner_id=?
+           AND f.id NOT IN (
+               SELECT file_id FROM file_course_tags WHERE course_id=?
+           )
+         ORDER BY f.created_at DESC"
+    );
+    $cfq->bind_param('iii', $cr['id'], $user_id, $cr['id']); $cfq->execute();
+    $cr['course_files'] = $cfq->get_result()->fetch_all(MYSQLI_ASSOC);
+    $cfq->close();
+
     $courses[] = $cr;
 }
 
@@ -518,7 +548,7 @@ function fileIcon(string $mime): string {
 <?php include 'includes/navbar.php'; ?>
 
 <!-- Loading overlay -->
-<div id="loadingOverlay" style="display:flex">
+<div id="loadingOverlay" style="display:none;">
     <div class="loading-box">
         <div class="loading-spinner"></div>
         <h5 style="color:var(--primary);font-weight:700;margin:0 0 6px;" id="loadingTitle">Generating Questions...</h5>
@@ -616,53 +646,47 @@ function fileIcon(string $mime): string {
                         <p>No courses yet. <a href="course_management.php">Create a course first.</a></p>
                     </div>
                     <?php else: ?>
-                    <?php foreach ($courses as $cr): ?>
+
+                    <!-- Dynamic Course → Topic → Folder → Files Selectors -->
                     <div class="mb-3">
-                        <!-- Course header -->
-                        <div style="background:<?php echo htmlspecialchars($cr['color']); ?>;color:#fff;border-radius:10px 10px 0 0;padding:8px 14px;font-weight:700;font-size:.88rem;display:flex;align-items:center;gap:8px;">
-                            <i class="fas fa-graduation-cap"></i>
-                            <?php echo htmlspecialchars($cr['code'].' — '.$cr['name']); ?>
+                        <div class="mb-2">
+                            <label class="fw-semibold" style="font-size:.84rem;color:var(--primary);"><i class="fas fa-graduation-cap me-1"></i> Course</label>
+                            <select id="examCourseFilter" class="form-select form-select-sm" style="border-radius:8px;">
+                                <option value="0">🎓 Select Course...</option>
+                                <?php foreach ($courses as $cr): ?>
+                                <option value="<?php echo $cr['id']; ?>" data-color="<?php echo htmlspecialchars($cr['color']); ?>">
+                                    <?php echo htmlspecialchars($cr['code'].' — '.$cr['name']); ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
-                        <?php if (empty($cr['topics'])): ?>
-                        <div style="background:#f8fbfc;border:1px solid #e0eaee;border-top:none;border-radius:0 0 10px 10px;padding:12px 14px;font-size:.82rem;color:#bbb;">
-                            No topics yet.
+                        <div class="mb-2" id="examTopicWrap" style="display:none;">
+                            <label class="fw-semibold" style="font-size:.84rem;color:var(--primary);"><i class="fas fa-tag me-1"></i> Topic</label>
+                            <select id="examTopicFilter" class="form-select form-select-sm" style="border-radius:8px;">
+                                <option value="0">🏷️ Select Topic...</option>
+                            </select>
                         </div>
-                        <?php else: ?>
-                        <?php foreach ($cr['topics'] as $tp): ?>
-                        <div style="background:#f8fbfc;border:1px solid #e0eaee;border-top:none;border-radius:0;">
-                            <!-- Topic row -->
-                            <div style="padding:7px 14px;border-bottom:1px dashed #e8edf2;font-size:.8rem;font-weight:700;color:#555;display:flex;align-items:center;gap:6px;">
-                                <i class="fas fa-folder" style="color:<?php echo htmlspecialchars($cr['color']); ?>;font-size:.85rem;"></i>
-                                <?php echo htmlspecialchars($tp['title']); ?>
-                                <?php if ($tp['week_no']): ?>
-                                <span style="font-size:.7rem;background:#eef2f7;color:var(--accent);padding:1px 7px;border-radius:10px;font-weight:600;">Week <?php echo $tp['week_no']; ?></span>
-                                <?php endif; ?>
-                            </div>
-                            <?php if (empty($tp['files'])): ?>
-                            <div style="padding:8px 24px;font-size:.78rem;color:#bbb;">
-                                <i class="fas fa-cloud-upload-alt me-1"></i>No files in this topic.
-                                <a href="course_management.php" style="font-size:.75rem;">Upload now</a>
-                            </div>
-                            <?php else: ?>
-                            <?php foreach ($tp['files'] as $tf): ?>
-                            <div class="d-flex align-items-center gap-2" style="padding:7px 24px;border-bottom:1px solid #f0f2f5;cursor:pointer;transition:background .12s;"
-                                 data-id="<?php echo $tf['id']; ?>"
-                                 data-name="<?php echo htmlspecialchars($tf['name']); ?>"
-                                 data-mime="<?php echo htmlspecialchars($tf['mime_type'] ?? ''); ?>"
-                                 onclick="selectTopicFile(this, <?php echo $cr['id']; ?>)"
-                                 id="tf-row-<?php echo $tf['id']; ?>">
-                                <i class="fas <?php echo fileIcon($tf['mime_type'] ?? ''); ?>" style="font-size:1rem;"></i>
-                                <span style="font-size:.82rem;font-weight:600;color:#2c3e50;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?php echo htmlspecialchars($tf['name']); ?></span>
-                                <i class="fas fa-check-circle text-success tf-check" id="tf-check-<?php echo $tf['id']; ?>" style="display:none;"></i>
-                            </div>
-                            <?php endforeach; ?>
-                            <?php endif; ?>
+                        <div class="mb-2" id="examFolderWrap" style="display:none;">
+                            <label class="fw-semibold" style="font-size:.84rem;color:var(--primary);"><i class="fas fa-folder me-1"></i> Folder</label>
+                            <select id="examFolderFilter" class="form-select form-select-sm" style="border-radius:8px;">
+                                <option value="0">📁 Select Folder...</option>
+                            </select>
                         </div>
-                        <?php endforeach; ?>
-                        <div style="height:6px;background:#f8fbfc;border:1px solid #e0eaee;border-top:none;border-radius:0 0 10px 10px;"></div>
-                        <?php endif; ?>
                     </div>
-                    <?php endforeach; ?>
+
+                    <!-- Dynamic file list -->
+                    <div id="examDynamicFiles" style="display:none;">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <label class="fw-semibold" style="font-size:.84rem;color:var(--primary);"><i class="fas fa-file me-1"></i> Files</label>
+                            <span class="small text-muted" id="examDynFileCount">0 selected</span>
+                        </div>
+                        <div id="examDynFileList" class="file-grid" style="max-height:260px;"></div>
+                    </div>
+                    <div id="examDynFilesMsg" class="text-muted text-center py-3 small" style="display:none;"></div>
+                    <div id="examDynLoading" class="text-center py-3 small text-muted" style="display:none;">
+                        <i class="fas fa-spinner fa-spin me-1"></i> Loading files...
+                    </div>
+
                     <?php endif; ?>
                     </div>
 
@@ -798,6 +822,7 @@ function fileIcon(string $mime): string {
 marked.setOptions({ breaks:true, gfm:true });
 
 let selectedFileId   = 0;
+let selectedFileIds  = [];    // For "By Course & Topic" tab multi-select
 let selectedDiff     = 'easy';
 let selectedQType    = '5 MCQ and 5 short answer';
 let currentEvalId    = 0;
@@ -814,21 +839,182 @@ function switchTab(tab) {
     if (tab === 'all') {
         $('#panelAllFiles').show(); $('#panelByTopic').hide();
         $('#tabAllFiles').addClass('selected'); $('#tabByTopic').removeClass('selected');
+        // Clear dynamic tab selection
+        selectedFileIds = [];
+        updateExamFileCount();
     } else {
         $('#panelAllFiles').hide(); $('#panelByTopic').show();
         $('#tabAllFiles').removeClass('selected'); $('#tabByTopic').addClass('selected');
         // Deselect any file from all-files grid
         $('.file-card').removeClass('selected');
+        selectedFileId = 0;
     }
+}
+
+// ── Dynamic Course → Topic → Folder → Files (By Course & Topic tab) ──
+$('#examCourseFilter').on('change', function() {
+    const courseId = $(this).val();
+    console.log('[NoteNest AI Exam] Course filter changed → course_id:', courseId);
+    selectedFileIds = [];
+    updateExamFileCount();
+
+    if (courseId == 0) {
+        $('#examTopicWrap, #examFolderWrap, #examDynamicFiles, #examDynFilesMsg, #examDynLoading').hide();
+        $('#examTopicFilter').html('<option value="0">🏷️ Select Topic...</option>');
+        $('#examFolderFilter').html('<option value="0">📁 Select Folder...</option>');
+        $('#examDynFileList').empty();
+        return;
+    }
+
+    // Fetch topics for this course
+    $('#examDynLoading').show();
+    $('#examDynFilesMsg, #examDynamicFiles').hide();
+    console.log('[NoteNest AI Exam] Fetching topics for course_id:', courseId);
+    $.get('get_topics.php', { course_id: courseId }, function(res) {
+        console.log('[NoteNest AI Exam] get_topics.php response:', res);
+        if (res.success && res.topics.length > 0) {
+            let html = '<option value="0">🏷️ Select Topic...</option>';
+            res.topics.forEach(t => {
+                html += `<option value="${t.id}">${escHtml(t.title)}</option>`;
+            });
+            $('#examTopicFilter').html(html);
+            $('#examTopicWrap').show();
+        } else {
+            console.log('[NoteNest AI Exam] No topics found for course_id:', courseId);
+            $('#examTopicWrap').hide();
+            $('#examFolderWrap').hide();
+            // Load files at course level
+            loadExamFiles(courseId, 0, 0);
+        }
+        $('#examDynLoading').hide();
+    }, 'json').fail(function(xhr) {
+        console.error('[NoteNest AI Exam] get_topics.php AJAX error:', xhr.status, xhr.responseText);
+        $('#examDynLoading').hide();
+    });
+});
+
+$('#examTopicFilter').on('change', function() {
+    const topicId  = $(this).val();
+    const courseId = $('#examCourseFilter').val();
+    console.log('[NoteNest AI Exam] Topic filter changed → topic_id:', topicId, 'course_id:', courseId);
+    selectedFileIds = [];
+    updateExamFileCount();
+
+    if (topicId == 0) {
+        $('#examFolderWrap').hide();
+        $('#examFolderFilter').html('<option value="0">📁 Select Folder...</option>');
+        loadExamFiles(courseId, 0, 0);
+        return;
+    }
+
+    // Fetch folders for this topic
+    $('#examDynLoading').show();
+    $('#examDynFilesMsg, #examDynamicFiles').hide();
+    console.log('[NoteNest AI Exam] Fetching folders for topic_id:', topicId, 'course_id:', courseId);
+    $.get('get_folders.php', { course_id: courseId, topic_id: topicId }, function(res) {
+        console.log('[NoteNest AI Exam] get_folders.php response:', res);
+        if (res.success && res.folders.length > 0) {
+            let html = '<option value="0">📁 Select Folder...</option>';
+            res.folders.forEach(f => {
+                html += `<option value="${f.id}">${escHtml(f.name)}</option>`;
+            });
+            $('#examFolderFilter').html(html);
+            $('#examFolderWrap').show();
+            // Auto-select linked folder
+            if (res.target_folder_id > 0) {
+                $('#examFolderFilter').val(res.target_folder_id);
+                console.log('[NoteNest AI Exam] Auto-selected folder_id:', res.target_folder_id);
+                loadExamFiles(courseId, topicId, res.target_folder_id);
+            } else {
+                loadExamFiles(courseId, topicId, 0);
+            }
+        } else {
+            console.log('[NoteNest AI Exam] No folders found for topic_id:', topicId);
+            $('#examFolderWrap').hide();
+            loadExamFiles(courseId, topicId, 0);
+        }
+        $('#examDynLoading').hide();
+    }, 'json').fail(function(xhr) {
+        console.error('[NoteNest AI Exam] get_folders.php AJAX error:', xhr.status, xhr.responseText);
+        $('#examDynLoading').hide();
+        loadExamFiles(courseId, topicId, 0);
+    });
+});
+
+$('#examFolderFilter').on('change', function() {
+    const folderId = $(this).val();
+    const topicId  = $('#examTopicFilter').val();
+    const courseId = $('#examCourseFilter').val();
+    console.log('[NoteNest AI Exam] Folder filter changed → folder_id:', folderId, 'topic_id:', topicId, 'course_id:', courseId);
+    selectedFileIds = [];
+    updateExamFileCount();
+    loadExamFiles(courseId, topicId, folderId);
+});
+
+function loadExamFiles(courseId, topicId, folderId) {
+    console.log('[NoteNest AI Exam] loadExamFiles → course_id:', courseId, 'topic_id:', topicId, 'folder_id:', folderId);
+    $('#examDynLoading').show();
+    $('#examDynFilesMsg, #examDynamicFiles').hide();
+    $('#examDynFileList').empty();
+
+    $.get('get_files.php', { course_id: courseId, topic_id: topicId, folder_id: folderId }, function(res) {
+        console.log('[NoteNest AI Exam] get_files.php response:', res);
+        $('#examDynLoading').hide();
+        if (res.success && res.files.length > 0) {
+            res.files.forEach(f => {
+                const card = $(`
+                    <div class="file-card" data-id="${f.id}" data-name="${escHtml(f.name)}"
+                         onclick="toggleExamDynFile(this, ${courseId})">
+                        <div class="ficon"><i class="fas fa-file text-muted"></i></div>
+                        <div class="fname">${escHtml(f.name)}</div>
+                        <div class="fdate mt-1"><i class="fas fa-check-circle text-success dyn-check" style="display:none;"></i></div>
+                    </div>
+                `);
+                $('#examDynFileList').append(card);
+            });
+            $('#examDynamicFiles').show();
+            console.log('[NoteNest AI Exam] Loaded', res.files.length, 'files for selection');
+        } else {
+            $('#examDynFilesMsg').text('No files found for this selection.').show();
+            console.log('[NoteNest AI Exam] No files found');
+        }
+    }, 'json').fail(function(xhr) {
+        $('#examDynLoading').hide();
+        $('#examDynFilesMsg').text('Error loading files. Please try again.').show();
+        console.error('[NoteNest AI Exam] get_files.php AJAX error:', xhr.status, xhr.responseText);
+    });
+}
+
+function toggleExamDynFile(el, courseId) {
+    const fileId = parseInt(el.dataset.id);
+    if ($(el).hasClass('selected')) {
+        $(el).removeClass('selected');
+        $(el).find('.dyn-check').hide();
+        selectedFileIds = selectedFileIds.filter(id => id !== fileId);
+    } else {
+        $(el).addClass('selected');
+        $(el).find('.dyn-check').show();
+        if (!selectedFileIds.includes(fileId)) selectedFileIds.push(fileId);
+    }
+    // Also set the course for exam config
+    if (courseId) $('#examCourse').val(courseId);
+    updateExamFileCount();
+    console.log('[NoteNest AI Exam] toggleExamDynFile → file_id:', fileId, 'selected files:', selectedFileIds);
+}
+
+function updateExamFileCount() {
+    $('#examDynFileCount').text(selectedFileIds.length + ' selected');
 }
 
 // ── File selection (All Files tab) ───────────────────────────
 function selectFile(el) {
     $('.file-card').removeClass('selected');
-    // Deselect topic tab
-    $('.tf-check').hide();
+    // Deselect dynamic topic tab files too
+    selectedFileIds = [];
+    updateExamFileCount();
     $(el).addClass('selected');
     selectedFileId = parseInt($(el).data('id'));
+    console.log('[NoteNest AI Exam] selectFile (all-files tab) → file_id:', selectedFileId);
     $('#examCourse').val('0');
 }
 
@@ -867,34 +1053,74 @@ function selectQType(el) {
 
 // ── STEP 1 → 2: Generate questions ───────────────────────────
 $('#btnGenerate').on('click', function() {
-    if (selectedFileId === 0) {
-        alert('Please select a file from your study materials first.');
-        return;
+    const activeTab = $('#tabByTopic').hasClass('selected') ? 'topic' : 'all';
+
+    // Collect file IDs based on active tab
+    let fileIdsToSend = [];
+    let courseIdToSend = parseInt($('#examCourse').val()) || 0;
+
+    if (activeTab === 'all') {
+        if (selectedFileId === 0) {
+            alert('Please select a file from your study materials first.');
+            return;
+        }
+        fileIdsToSend = [selectedFileId];
+    } else {
+        // By Course & Topic tab — use selectedFileIds array
+        if (selectedFileIds.length === 0) {
+            alert('Please select at least one file from the By Course & Topic section.');
+            return;
+        }
+        fileIdsToSend = selectedFileIds;
+        // Also use the course from the filter
+        const filterCourseId = parseInt($('#examCourseFilter').val()) || 0;
+        if (filterCourseId > 0) courseIdToSend = filterCourseId;
     }
+
+    console.log('[NoteNest AI Exam] Generate Questions →',
+        'tab:', activeTab,
+        'file_ids:', fileIdsToSend,
+        'course_id:', courseIdToSend,
+        'q_types:', selectedQType,
+        'difficulty:', selectedDiff
+    );
 
     showLoading('Generating Questions...', 'AI is reading your study material...');
 
-    $.post('ai_exam.php', {
-        action:      'generate_questions',
-        file_id:     selectedFileId,
-        course_id:   $('#examCourse').val(),
-        manual_text: manualText,
-        q_types:     selectedQType,
-        difficulty:  selectedDiff
-    }, function(res) {
-        hideLoading();
-        if (res.success) {
-            currentEvalId    = res.eval_id;
-            currentQuestions = res.questions;
-            totalQuestions   = res.questions.length;
-            renderQuestions(res.questions, res.file_name);
-            goToStep(3);
-        } else {
-            alert('❌ ' + (res.error || 'Could not generate questions.'));
+    // Use FormData to properly send file_ids as an array
+    const formData = new FormData();
+    fileIdsToSend.forEach(fId => formData.append('file_ids[]', fId));
+    formData.append('course_id',  courseIdToSend);
+    formData.append('q_types',    selectedQType);
+    formData.append('difficulty', selectedDiff);
+
+    $.ajax({
+        url: 'generate_exam.php',
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        dataType: 'json',
+        success: function(res) {
+            hideLoading();
+            console.log('[NoteNest AI Exam] generate_exam.php response:', res);
+            if (res.success) {
+                currentEvalId    = res.eval_id;
+                currentQuestions = res.questions;
+                totalQuestions   = res.questions.length;
+                console.log('[NoteNest AI Exam] Generated', totalQuestions, 'questions for file(s):', res.file_name);
+                renderQuestions(res.questions, res.file_name);
+                goToStep(3);
+            } else {
+                console.error('[NoteNest AI Exam] generate_exam.php error:', res.error);
+                alert('❌ ' + (res.error || 'Could not generate questions.'));
+            }
+        },
+        error: function(xhr, status, err) {
+            hideLoading();
+            console.error('[NoteNest AI Exam] generate_exam.php AJAX error:', xhr.status, xhr.responseText);
+            alert('Network error. Please try again.');
         }
-    }, 'json').fail(function() {
-        hideLoading();
-        alert('Network error. Please try again.');
     });
 });
 
@@ -1097,10 +1323,20 @@ function goToStep(step) {
 }
 
 function restartExam() {
-    selectedFileId = 0; currentEvalId = 0; currentQuestions = [];
-    answeredSet.clear(); totalQuestions = 0;
+    selectedFileId = 0;
+    selectedFileIds = [];
+    currentEvalId = 0;
+    currentQuestions = [];
+    answeredSet.clear();
+    totalQuestions = 0;
     $('.file-card').removeClass('selected');
-    $('#manualText').val('');
+    // Reset dynamic By-Course tab selectors
+    $('#examCourseFilter').val('0');
+    $('#examTopicWrap, #examFolderWrap, #examDynamicFiles, #examDynFilesMsg, #examDynLoading').hide();
+    $('#examTopicFilter').html('<option value="0">🏷️ Select Topic...</option>');
+    $('#examFolderFilter').html('<option value="0">📁 Select Folder...</option>');
+    $('#examDynFileList').empty();
+    updateExamFileCount();
     $('#weakAreasPanel, #suggestionsPanel').hide();
     loadHistory();
     goToStep(1);

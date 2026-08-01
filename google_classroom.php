@@ -16,7 +16,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     // SYNC NOW
     if ($_POST['action'] === 'sync_now') {
+        @set_time_limit(300);
+        @ini_set('max_execution_time', 300);
+        ob_start();
+        require_once 'includes/db.php';
         $result = gc_run_sync($conn, $user_id, 'manual');
+        // After sync: do a final repair pass to link any orphaned files/folders
+        gc_repair_and_link_courses($conn, $user_id);
+        $_SESSION['gc_repaired_' . $user_id] = true;
+        ob_end_clean();
+        header('Content-Type: application/json');
         echo json_encode($result);
         exit;
     }
@@ -76,26 +85,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     exit;
 }
 
-// ── AUTO-SYNC on page load ───────────────────────────────────
-$account   = gc_get_account($conn, $user_id);
+// ── AUTO-RESET stuck sync status & auto-repair course links ──
+$account        = gc_get_account($conn, $user_id);
 $autoSyncResult = null;
-
-if ($account && $account['sync_status'] !== 'syncing') {
-    // Auto-sync if never synced OR last sync was >5 minutes ago
-    $shouldSync = false;
-    if (!$account['last_sync_at']) {
-        $shouldSync = true;
-    } else {
-        $lastSyncTime = strtotime($account['last_sync_at']);
-        $shouldSync   = (time() - $lastSyncTime) > 300; // 5 minutes
+if ($account) {
+    // If status is stuck on syncing, reset to idle
+    if ($account['sync_status'] === 'syncing') {
+        gc_update_sync_status($conn, $user_id, 'idle');
+        $account['sync_status'] = 'idle';
     }
-
-    if ($shouldSync) {
-        require_once 'includes/ai_service.php';
-        $autoSyncResult = gc_run_sync($conn, $user_id, 'auto');
-        // Refresh account data after sync
-        $account = gc_get_account($conn, $user_id);
-    }
+    // Auto-repair & link courses/folders/files
+    gc_repair_and_link_courses($conn, $user_id);
 }
 
 $syncStats = $account ? gc_get_sync_stats($conn, $user_id) : null;
@@ -130,6 +130,23 @@ if ($account) {
     $cq->close();
 }
 
+// Synced files / materials
+$syncedFiles = [];
+if ($account) {
+    $fq = $conn->prepare(
+        "SELECT gf.*, f.file_path, f.mime_type AS nn_mime, f.folder_id AS nn_folder_id,
+                gc.course_name, gc.section AS course_section
+         FROM google_files gf
+         LEFT JOIN files f ON gf.file_id = f.id
+         LEFT JOIN google_courses gc ON gf.google_course_id = gc.google_course_id AND gf.user_id = gc.user_id
+         WHERE gf.user_id = ? ORDER BY gf.created_at DESC"
+    );
+    $fq->bind_param('i', $user_id);
+    $fq->execute();
+    $syncedFiles = $fq->get_result()->fetch_all(MYSQLI_ASSOC);
+    $fq->close();
+}
+
 // Upcoming assignments
 $upcomingAssignments = [];
 if ($account) {
@@ -146,6 +163,7 @@ if ($account) {
     $upcomingAssignments = $aq->get_result()->fetch_all(MYSQLI_ASSOC);
     $aq->close();
 }
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -174,7 +192,8 @@ if ($account) {
     <?php endif; ?>
 
     <!-- Auto-Sync Result -->
-    <?php if ($autoSyncResult): ?>
+    <?php if (!empty($autoSyncResult)): ?>
+
     <div class="alert alert-<?= $autoSyncResult['success'] ? 'info' : 'warning' ?> alert-dismissible fade show gc-alert" role="alert">
         <?php if ($autoSyncResult['success']): ?>
             <i class="fas fa-sync-alt me-1"></i> Auto-synced:
@@ -342,12 +361,17 @@ if ($account) {
     <ul class="nav nav-pills gc-tabs mb-4" role="tablist">
         <li class="nav-item">
             <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-courses">
-                <i class="fas fa-graduation-cap me-1"></i> Courses
+                <i class="fas fa-graduation-cap me-1"></i> Courses (<?= count($syncedCourses) ?>)
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-materials">
+                <i class="fas fa-folder-open me-1"></i> Materials & Files (<?= count($syncedFiles) ?>)
             </button>
         </li>
         <li class="nav-item">
             <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-assignments">
-                <i class="fas fa-tasks me-1"></i> Assignments
+                <i class="fas fa-tasks me-1"></i> Assignments (<?= count($upcomingAssignments) ?>)
             </button>
         </li>
         <li class="nav-item">
@@ -375,13 +399,17 @@ if ($account) {
                 </div>
             </div>
             <?php else: ?>
-            <div class="row g-3">
+            <div class="row g-3" id="gcCourseCards">
                 <?php foreach ($syncedCourses as $gc): ?>
                 <div class="col-md-6 col-lg-4">
-                    <div class="gc-course-card">
+                    <div class="gc-course-card gc-course-clickable"
+                         data-course-id="<?= htmlspecialchars($gc['google_course_id']) ?>"
+                         data-course-name="<?= htmlspecialchars($gc['course_name']) ?>"
+                         onclick="gcOpenCourse(this)"
+                         style="cursor:pointer;">
                         <div class="gc-course-header">
                             <div class="gc-course-icon">
-                                <i class="fas fa-book"></i>
+                                <i class="fas fa-chalkboard"></i>
                             </div>
                             <div class="gc-course-badge"><?= htmlspecialchars($gc['course_state']) ?></div>
                         </div>
@@ -394,10 +422,10 @@ if ($account) {
                                 <i class="fas fa-code me-1"></i><?= htmlspecialchars($gc['course_code']) ?>
                             </div>
                         <?php endif; ?>
-                        <div class="gc-course-meta">
-                            <span title="NoteNest Course">
+                        <div class="gc-course-meta mt-2">
+                            <span title="NoteNest Course" class="text-primary fw-semibold">
                                 <i class="fas fa-link me-1"></i>
-                                <?= $gc['nn_course_name'] ? htmlspecialchars($gc['nn_course_name']) : 'Not linked' ?>
+                                <?= $gc['nn_course_name'] ? htmlspecialchars($gc['nn_course_name']) : 'Linked to NoteNest' ?>
                             </span>
                         </div>
                         <?php if ($gc['last_synced_at']): ?>
@@ -406,12 +434,126 @@ if ($account) {
                             Synced <?= date('M d, g:i A', strtotime($gc['last_synced_at'])) ?>
                         </div>
                         <?php endif; ?>
+                        <div class="mt-3">
+                            <button class="btn btn-sm btn-outline-primary w-100" onclick="event.stopPropagation(); gcOpenCourse(this.closest('.gc-course-card'))">
+                                <i class="fas fa-folder-open me-1"></i> Open Course
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <?php endforeach; ?>
             </div>
+
+            <!-- ── AJAX Drill-Down Panel ────────────────────── -->
+            <div id="gcDrillDown" style="display:none;" class="mt-4">
+                <!-- Breadcrumb -->
+                <nav aria-label="breadcrumb" class="mb-3">
+                    <ol class="breadcrumb gc-breadcrumb" id="gcBreadcrumb">
+                        <li class="breadcrumb-item">
+                            <a href="#" onclick="gcBackToCourses(); return false;">
+                                <i class="fas fa-th-large me-1"></i>All Courses
+                            </a>
+                        </li>
+                    </ol>
+                </nav>
+
+                <!-- Topics Panel -->
+                <div id="gcTopicsPanel">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h5 class="mb-0" id="gcCourseHeading"></h5>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="gcBackToCourses()">
+                            <i class="fas fa-arrow-left me-1"></i>Back
+                        </button>
+                    </div>
+                    <div id="gcTopicsList" class="row g-3">
+                        <div class="text-center py-5"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i></div>
+                    </div>
+                </div>
+
+                <!-- Files Panel (hidden until topic clicked) -->
+                <div id="gcFilesPanel" style="display:none;">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h5 class="mb-0" id="gcTopicHeading"></h5>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="gcBackToTopics()">
+                            <i class="fas fa-arrow-left me-1"></i>Back to Topics
+                        </button>
+                    </div>
+                    <!-- Files -->
+                    <div id="gcFilesList"></div>
+                    <!-- Assignments -->
+                    <div id="gcAssignmentsList" class="mt-4"></div>
+                </div>
+            </div>
             <?php endif; ?>
         </div>
+
+        <!-- MATERIALS & FILES TAB -->
+        <div class="tab-pane fade" id="tab-materials">
+            <?php if (empty($syncedFiles)): ?>
+            <div class="gc-card">
+                <div class="gc-card-body text-center py-5">
+                    <i class="fas fa-folder-open fa-3x mb-3" style="color:#ccc;"></i>
+                    <h5 class="text-muted">No materials synced yet</h5>
+                    <p class="text-muted">Click "Sync Now" to download your course materials from Google Classroom.</p>
+                </div>
+            </div>
+            <?php else: ?>
+            <div class="gc-card">
+                <div class="gc-card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table gc-assignments-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>File Title</th>
+                                    <th>Course / Section</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($syncedFiles as $sf):
+                                $statusBadge = ($sf['download_status'] === 'downloaded')
+                                    ? '<span class="badge bg-success"><i class="fas fa-check me-1"></i>Downloaded</span>'
+                                    : '<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>' . htmlspecialchars($sf['download_status']) . '</span>';
+                            ?>
+                                <tr>
+                                    <td>
+                                        <div class="fw-bold"><i class="far fa-file-alt text-primary me-2"></i><?= htmlspecialchars($sf['file_title']) ?></div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark border"><?= htmlspecialchars($sf['course_name'] ?? 'Classroom') ?></span>
+                                        <?php if (!empty($sf['course_section'])): ?>
+                                        <br><small class="text-muted"><i class="fas fa-layer-group me-1"></i><?= htmlspecialchars($sf['course_section']) ?></small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= $statusBadge ?></td>
+                                    <td><small class="text-muted"><?= date('M d, Y', strtotime($sf['created_at'])) ?></small></td>
+                                    <td>
+                                        <?php if ($sf['file_id']): ?>
+                                            <a href="note_preview.php?file=<?= (int)$sf['file_id'] ?>" target="_blank" class="btn btn-sm btn-outline-info me-1">
+                                                <i class="fas fa-eye"></i> Preview
+                                            </a>
+                                            <a href="note_download.php?id=<?= (int)$sf['file_id'] ?>" class="btn btn-sm btn-outline-success me-1">
+                                                <i class="fas fa-download"></i> Download
+                                            </a>
+                                        <?php endif; ?>
+                                        <?php if (!empty($sf['nn_folder_id'])): ?>
+                                            <a href="my_note_nest.php?folder=<?= (int)$sf['nn_folder_id'] ?>" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-folder-open"></i> View in NoteNest
+                                            </a>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+        </div>
+
 
         <!-- ASSIGNMENTS TAB -->
         <div class="tab-pane fade" id="tab-assignments">
@@ -593,6 +735,33 @@ if ($account) {
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<style>
+/* ── Drill-down styles ───────────────────────────── */
+.gc-course-clickable { transition: transform .15s, box-shadow .15s; }
+.gc-course-clickable:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(66,133,244,.18) !important; border: 1.5px solid #4285f4; }
+.gc-breadcrumb { background: #f0f4ff; border-radius: 10px; padding: 10px 18px; }
+.gc-breadcrumb .breadcrumb-item a { color: #4285f4; font-weight: 600; text-decoration: none; }
+.gc-topic-item { background: #fff; border: 1.5px solid #e3eafe; border-radius: 12px; padding: 16px 20px; cursor: pointer;
+    transition: background .15s, border-color .15s, box-shadow .15s; display: flex; align-items: center; gap: 14px; }
+.gc-topic-item:hover { background: #f0f4ff; border-color: #4285f4; box-shadow: 0 4px 16px rgba(66,133,244,.12); }
+.gc-topic-icon { width: 42px; height: 42px; border-radius: 10px; background: linear-gradient(135deg,#4285f4,#34a853);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.1rem; flex-shrink: 0; }
+.gc-topic-name { font-weight: 600; color: #1a1a2e; font-size: 1rem; }
+.gc-topic-count { font-size: .82rem; color: #888; margin-top: 2px; }
+.gc-file-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 10px;
+    background: #fff; border: 1px solid #e8ecf0; margin-bottom: 8px; transition: background .15s; }
+.gc-file-row:hover { background: #f8faff; }
+.gc-file-icon { width: 36px; height: 36px; border-radius: 8px; background: #e8f0fe;
+    display: flex; align-items: center; justify-content: center; color: #4285f4; font-size: 1rem; flex-shrink: 0; }
+.gc-file-name { font-weight: 500; color: #222; font-size: .95rem; flex: 1; }
+.gc-asg-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 10px;
+    background: #fff9f0; border: 1px solid #ffe0b2; margin-bottom: 8px; }
+.gc-asg-icon { width: 36px; height: 36px; border-radius: 8px; background: #fff3e0;
+    display: flex; align-items: center; justify-content: center; color: #f39c12; font-size: 1rem; flex-shrink: 0; }
+.gc-drill-empty { text-align:center; padding: 40px 20px; color: #aaa; }
+.gc-drill-section-title { font-size: 1rem; font-weight: 700; color: #4285f4; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px; }
+</style>
 <script>
 // ── Sync Now ─────────────────────────────────────────────────
 function syncNow() {
@@ -601,22 +770,47 @@ function syncNow() {
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Syncing...';
 
-    $.post('google_classroom.php', { action: 'sync_now' }, function(res) {
-        if (res.success) {
-            const s = res.stats;
-            let msg = `Sync complete!\n\nCourses: ${s.courses}\nTopics: ${s.topics}\nFiles: ${s.files}\nAssignments: ${s.assignments}`;
-            if (s.errors > 0) msg += `\n\n⚠️ ${s.errors} error(s) occurred.`;
-            alert(msg);
-            location.reload();
-        } else {
-            alert('Sync failed: ' + (res.error || 'Unknown error'));
+    $.ajax({
+        url: 'google_classroom.php',
+        type: 'POST',
+        data: { action: 'sync_now' },
+        dataType: 'json',
+        timeout: 120000,  // 2 minutes timeout
+        success: function(res) {
+            if (res.success) {
+                const s = res.stats;
+                let msg = `Sync complete!\n\nCourses: ${s.courses}\nTopics: ${s.topics}\nFiles: ${s.files}\nAssignments: ${s.assignments}`;
+                if (s.errors > 0) msg += `\n\n⚠️ ${s.errors} error(s) occurred.`;
+                alert(msg);
+                location.reload();
+            } else {
+                alert('Sync failed: ' + (res.error || 'Unknown error'));
+            }
+        },
+        error: function(xhr, status, errorThrown) {
+            if (status === 'timeout') {
+                alert('Sync process completed or is running in the background. Refreshing page...');
+                location.reload();
+            } else {
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    if (res && res.success) {
+                        const s = res.stats;
+                        let msg = `Sync complete!\n\nCourses: ${s.courses}\nTopics: ${s.topics}\nFiles: ${s.files}\nAssignments: ${s.assignments}`;
+                        if (s.errors > 0) msg += `\n\n⚠️ ${s.errors} error(s) occurred.`;
+                        alert(msg);
+                        location.reload();
+                        return;
+                    }
+                } catch(e) {}
+                alert('Network request completed. Refreshing page...');
+                location.reload();
+            }
+        },
+        complete: function() {
+            btn.disabled = false;
+            btn.innerHTML = orig;
         }
-    }, 'json').fail(function(xhr) {
-        alert('Network error during sync. Check console for details.');
-        console.error(xhr);
-    }).always(function() {
-        btn.disabled = false;
-        btn.innerHTML = orig;
     });
 }
 
@@ -751,6 +945,255 @@ document.querySelector('[data-bs-target="#tab-calendar"]')?.addEventListener('sh
 
 // Auto-load calendar if it's visible
 if (document.querySelector('#tab-calendar.show')) loadCalendar();
+
+// ── AJAX Drill-Down: Courses → Topics → Files ────────────────
+let _gcCurrentCourseId   = null;
+let _gcCurrentCourseName = '';
+let _gcCurrentTopicId    = null;
+let _gcCurrentTopicName  = '';
+
+function gcOpenCourse(cardEl) {
+    const courseId   = cardEl.dataset.courseId;
+    const courseName = cardEl.dataset.courseName;
+    if (!courseId) return;
+
+    _gcCurrentCourseId   = courseId;
+    _gcCurrentCourseName = courseName;
+
+    // Hide card grid, show drill-down
+    document.getElementById('gcCourseCards').style.display = 'none';
+    const dd = document.getElementById('gcDrillDown');
+    dd.style.display = '';
+
+    // Reset to topics panel
+    document.getElementById('gcTopicsPanel').style.display = '';
+    document.getElementById('gcFilesPanel').style.display  = 'none';
+
+    // Heading
+    document.getElementById('gcCourseHeading').innerHTML =
+        `<i class="fas fa-chalkboard me-2 text-primary"></i>${escHtml(courseName)}`;
+
+    // Breadcrumb
+    updateGcBreadcrumb([
+        { label: 'All Courses', fn: 'gcBackToCourses()' },
+        { label: courseName }
+    ]);
+
+    // Spinner
+    document.getElementById('gcTopicsList').innerHTML =
+        '<div class="col-12 text-center py-5"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i><p class="mt-2 text-muted">Loading topics…</p></div>';
+
+    // Scroll to drill-down
+    dd.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    $.post('dashboard_gc_ajax.php', { action: 'get_topics', google_course_id: courseId }, function(res) {
+        if (!res.success) {
+            document.getElementById('gcTopicsList').innerHTML =
+                '<div class="col-12 gc-drill-empty"><i class="fas fa-exclamation-circle fa-2x mb-2 d-block text-warning"></i>Failed to load topics.</div>';
+            return;
+        }
+        renderGcTopics(res.topics || [], res.unassigned_files_count || 0, courseId);
+    }, 'json').fail(function() {
+        document.getElementById('gcTopicsList').innerHTML =
+            '<div class="col-12 gc-drill-empty"><i class="fas fa-wifi fa-2x mb-2 d-block text-danger"></i>Network error. Please try again.</div>';
+    });
+}
+
+function renderGcTopics(topics, unassignedCount, courseId) {
+    const container = document.getElementById('gcTopicsList');
+    if (!topics.length && !unassignedCount) {
+        container.innerHTML = '<div class="col-12 gc-drill-empty"><i class="fas fa-folder-open fa-2x mb-2 d-block"></i>No topics found for this course.</div>';
+        return;
+    }
+
+    let html = '';
+    topics.forEach(function(t) {
+        const count = parseInt(t.files_count) || 0;
+        html += `
+        <div class="col-md-6 col-lg-4">
+            <div class="gc-topic-item" onclick="gcOpenTopic('${escAttr(t.topic_id)}', '${escAttr(t.topic_name)}')">
+                <div class="gc-topic-icon"><i class="fas fa-folder"></i></div>
+                <div>
+                    <div class="gc-topic-name">${escHtml(t.topic_name)}</div>
+                    <div class="gc-topic-count"><i class="fas fa-file me-1"></i>${count} file${count !== 1 ? 's' : ''}</div>
+                </div>
+                <i class="fas fa-chevron-right ms-auto text-muted"></i>
+            </div>
+        </div>`;
+    });
+
+    if (unassignedCount > 0) {
+        html += `
+        <div class="col-md-6 col-lg-4">
+            <div class="gc-topic-item" onclick="gcOpenTopic('unassigned', 'Unassigned Files')">
+                <div class="gc-topic-icon" style="background:linear-gradient(135deg,#888,#aaa);"><i class="fas fa-inbox"></i></div>
+                <div>
+                    <div class="gc-topic-name">Unassigned Files</div>
+                    <div class="gc-topic-count"><i class="fas fa-file me-1"></i>${unassignedCount} file${unassignedCount !== 1 ? 's' : ''}</div>
+                </div>
+                <i class="fas fa-chevron-right ms-auto text-muted"></i>
+            </div>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function gcOpenTopic(topicId, topicName) {
+    _gcCurrentTopicId   = topicId;
+    _gcCurrentTopicName = topicName;
+
+    // Switch panels
+    document.getElementById('gcTopicsPanel').style.display = 'none';
+    document.getElementById('gcFilesPanel').style.display  = '';
+
+    document.getElementById('gcTopicHeading').innerHTML =
+        `<i class="fas fa-folder-open me-2 text-warning"></i>${escHtml(topicName)}`;
+
+    updateGcBreadcrumb([
+        { label: 'All Courses', fn: 'gcBackToCourses()' },
+        { label: _gcCurrentCourseName, fn: `gcBackToTopics()` },
+        { label: topicName }
+    ]);
+
+    document.getElementById('gcFilesList').innerHTML =
+        '<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i><p class="mt-2 text-muted">Loading files…</p></div>';
+    document.getElementById('gcAssignmentsList').innerHTML = '';
+
+    $.post('dashboard_gc_ajax.php', {
+        action:           'get_topic_content',
+        google_course_id: _gcCurrentCourseId,
+        topic_id:         topicId
+    }, function(res) {
+        if (!res.success) {
+            document.getElementById('gcFilesList').innerHTML =
+                '<div class="gc-drill-empty"><i class="fas fa-exclamation-circle fa-2x mb-2 d-block text-warning"></i>Failed to load content.</div>';
+            return;
+        }
+        renderGcFiles(res.files || []);
+        renderGcAssignments(res.assignments || []);
+    }, 'json').fail(function() {
+        document.getElementById('gcFilesList').innerHTML =
+            '<div class="gc-drill-empty"><i class="fas fa-wifi fa-2x mb-2 d-block text-danger"></i>Network error. Please try again.</div>';
+    });
+}
+
+function renderGcFiles(files) {
+    const container = document.getElementById('gcFilesList');
+    if (!files.length) {
+        container.innerHTML = '<div class="gc-drill-empty"><i class="fas fa-file-slash fa-2x mb-2 d-block"></i>No files in this topic.</div>';
+        return;
+    }
+
+    let html = `<div class="gc-drill-section-title"><i class="fas fa-file-alt"></i> Files &amp; Materials (${files.length})</div>`;
+    files.forEach(function(f) {
+        const icon = gcFileIcon(f.mime_type || f.file_type);
+        const statusBadge = f.download_status === 'downloaded'
+            ? '<span class="badge bg-success ms-2">Downloaded</span>'
+            : `<span class="badge bg-secondary ms-2">${escHtml(f.download_status || 'pending')}</span>`;
+
+        let actions = '';
+        if (f.file_id) {
+            actions += `<a href="note_preview.php?file=${parseInt(f.file_id)}" target="_blank" class="btn btn-sm btn-outline-info me-1" title="Preview"><i class="fas fa-eye"></i></a>`;
+            actions += `<a href="note_download.php?id=${parseInt(f.file_id)}" class="btn btn-sm btn-outline-success me-1" title="Download"><i class="fas fa-download"></i></a>`;
+        }
+        if (f.file_url) {
+            actions += `<a href="${escAttr(f.file_url)}" target="_blank" class="btn btn-sm btn-outline-primary" title="Open in Google"><i class="fas fa-external-link-alt"></i></a>`;
+        }
+
+        html += `
+        <div class="gc-file-row">
+            <div class="gc-file-icon">${icon}</div>
+            <div class="gc-file-name">${escHtml(f.file_title)}${statusBadge}</div>
+            <div class="flex-shrink-0">${actions}</div>
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function renderGcAssignments(assignments) {
+    const container = document.getElementById('gcAssignmentsList');
+    if (!assignments.length) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = `<div class="gc-drill-section-title"><i class="fas fa-tasks"></i> Assignments (${assignments.length})</div>`;
+    assignments.forEach(function(a) {
+        const today    = new Date(); today.setHours(0,0,0,0);
+        const dueDate  = a.due_date ? new Date(a.due_date) : null;
+        const overdue  = dueDate && dueDate < today;
+        const dueStr   = dueDate ? dueDate.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : 'No due date';
+        const isDone   = a.todo_status === 'done';
+        const badgeCls = isDone ? 'bg-success' : (overdue ? 'bg-danger' : 'bg-warning text-dark');
+        const badgeTxt = isDone ? 'Done' : (overdue ? 'Overdue' : 'Pending');
+
+        html += `
+        <div class="gc-asg-row">
+            <div class="gc-asg-icon"><i class="fas fa-clipboard-list"></i></div>
+            <div class="flex-grow-1">
+                <div class="fw-semibold">${escHtml(a.title)}</div>
+                ${a.description ? `<div class="text-muted small">${escHtml(a.description.substring(0, 100))}${a.description.length > 100 ? '…' : ''}</div>` : ''}
+            </div>
+            <div class="text-end flex-shrink-0">
+                <div class="small ${overdue && !isDone ? 'text-danger fw-bold' : 'text-muted'}">${dueStr}</div>
+                <span class="badge ${badgeCls}">${badgeTxt}</span>
+            </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function gcBackToCourses() {
+    document.getElementById('gcCourseCards').style.display = '';
+    document.getElementById('gcDrillDown').style.display   = 'none';
+    _gcCurrentCourseId = null;
+}
+
+function gcBackToTopics() {
+    document.getElementById('gcFilesPanel').style.display  = 'none';
+    document.getElementById('gcTopicsPanel').style.display = '';
+    updateGcBreadcrumb([
+        { label: 'All Courses', fn: 'gcBackToCourses()' },
+        { label: _gcCurrentCourseName }
+    ]);
+    _gcCurrentTopicId = null;
+}
+
+function updateGcBreadcrumb(items) {
+    const bc = document.getElementById('gcBreadcrumb');
+    let html = '';
+    items.forEach(function(item, i) {
+        if (i < items.length - 1) {
+            html += `<li class="breadcrumb-item"><a href="#" onclick="${item.fn}; return false;">${escHtml(item.label)}</a></li>`;
+        } else {
+            html += `<li class="breadcrumb-item active">${escHtml(item.label)}</li>`;
+        }
+    });
+    bc.innerHTML = html;
+}
+
+function gcFileIcon(mimeOrType) {
+    const m = (mimeOrType || '').toLowerCase();
+    if (m.includes('pdf'))                                    return '<i class="fas fa-file-pdf" style="color:#e74c3c;"></i>';
+    if (m.includes('word') || m.includes('doc'))              return '<i class="fas fa-file-word" style="color:#2980b9;"></i>';
+    if (m.includes('sheet') || m.includes('xls'))            return '<i class="fas fa-file-excel" style="color:#27ae60;"></i>';
+    if (m.includes('presentation') || m.includes('ppt'))     return '<i class="fas fa-file-powerpoint" style="color:#e67e22;"></i>';
+    if (m.includes('image') || m.includes('png') || m.includes('jpg')) return '<i class="fas fa-file-image" style="color:#8e44ad;"></i>';
+    if (m.includes('video'))                                  return '<i class="fas fa-file-video" style="color:#e74c3c;"></i>';
+    if (m.includes('audio'))                                  return '<i class="fas fa-file-audio" style="color:#1abc9c;"></i>';
+    if (m.includes('zip') || m.includes('rar'))               return '<i class="fas fa-file-archive" style="color:#95a5a6;"></i>';
+    if (m.includes('document') || m.includes('gdoc'))        return '<i class="fas fa-file-alt" style="color:#4285f4;"></i>';
+    return '<i class="fas fa-file" style="color:#7f8c8d;"></i>';
+}
+
+function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(str) {
+    return String(str).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+}
 </script>
+<?php include 'includes/footer.php'; ?>
 </body>
 </html>

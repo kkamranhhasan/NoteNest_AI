@@ -5,6 +5,7 @@
 // Security: owner OR shared access only
 // ============================================================
 session_start();
+require_once 'config.php';
 require 'includes/db.php';
 
 if (!isset($_SESSION['user_id'])) { http_response_code(403); exit; }

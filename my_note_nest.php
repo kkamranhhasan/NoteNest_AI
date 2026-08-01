@@ -1,7 +1,13 @@
 <?php
 // --- UTILS ---
 function folder_belongs_to_user($conn, $folder_id, $user_id) {
+    if (function_exists('db_reconnect')) db_reconnect($conn);
     $stmt = $conn->prepare("SELECT 1 FROM folders WHERE id=? AND owner_id=?");
+    if (!$stmt) {
+        if (function_exists('db_reconnect')) db_reconnect($conn);
+        $stmt = $conn->prepare("SELECT 1 FROM folders WHERE id=? AND owner_id=?");
+    }
+    if (!$stmt) return false;
     $stmt->bind_param('ii', $folder_id, $user_id);
     $stmt->execute(); $stmt->store_result();
     $ok = $stmt->num_rows > 0;
@@ -11,7 +17,13 @@ function folder_belongs_to_user($conn, $folder_id, $user_id) {
 function get_folder_path($conn, $folder_id, $user_id) {
     $path = [];
     while ($folder_id) {
+        if (function_exists('db_reconnect')) db_reconnect($conn);
         $stmt = $conn->prepare("SELECT id, name, parent_folder_id FROM folders WHERE id=? AND owner_id=?");
+        if (!$stmt) {
+            if (function_exists('db_reconnect')) db_reconnect($conn);
+            $stmt = $conn->prepare("SELECT id, name, parent_folder_id FROM folders WHERE id=? AND owner_id=?");
+        }
+        if (!$stmt) break;
         $stmt->bind_param('ii', $folder_id, $user_id);
         $stmt->execute();
         $stmt->bind_result($id, $name, $parent_id);
@@ -19,6 +31,7 @@ function get_folder_path($conn, $folder_id, $user_id) {
             array_unshift($path, ['id' => $id, 'name' => $name]);
             $folder_id = $parent_id;
         } else {
+            $stmt->close();
             break;
         }
         $stmt->close();
@@ -26,9 +39,14 @@ function get_folder_path($conn, $folder_id, $user_id) {
     return $path;
 }
 require 'includes/auth.php';
+require_once 'config.php';
 require 'includes/db.php';
 $user_id = $_SESSION['user_id'];
+require_once 'includes/ai_service.php';
+// Note: Indexing is deferred — runs only when files are uploaded, not on page load
+// to prevent memory/database connection exhaustion on shared hosting
 $upload_error = $folder_error = $modal_message = '';
+
 $current_folder_id = isset($_GET['folder']) && is_numeric($_GET['folder']) ? intval($_GET['folder']) : null;
 
 // --- Brute-force recursive share ---
@@ -171,17 +189,20 @@ if (isset($_POST['revoke_share'])) {
     exit('Access revoked.');
 }
 if (isset($_POST['favorite_item'])) {
-    $item_type = $_POST['item_type'];
-    $item_id = intval($_POST['item_id']);
-    $is_fav = isset($_POST['is_fav']) ? 1 : 0;
-    if ($is_fav) {
-        $stmt = $conn->prepare('DELETE FROM favorites WHERE user_id=? AND item_type=? AND item_id=?');
-        $stmt->bind_param('isi', $user_id, $item_type, $item_id);
-        $stmt->execute(); $stmt->close();
-    } else {
-        $stmt = $conn->prepare('INSERT IGNORE INTO favorites (user_id, item_type, item_id) VALUES (?, ?, ?)');
-        $stmt->bind_param('isi', $user_id, $item_type, $item_id);
-        $stmt->execute(); $stmt->close();
+    $item_type = trim($_POST['item_type'] ?? '');
+    $item_id   = intval($_POST['item_id'] ?? 0);
+    $is_fav    = isset($_POST['is_fav']) && $_POST['is_fav'] == 1;
+
+    if (in_array($item_type, ['file', 'folder', 'course', 'topic']) && $item_id > 0) {
+        if ($is_fav) {
+            $stmt = $conn->prepare('DELETE FROM favorites WHERE user_id=? AND item_type=? AND item_id=?');
+            $stmt->bind_param('isi', $user_id, $item_type, $item_id);
+            $stmt->execute(); $stmt->close();
+        } else {
+            $stmt = $conn->prepare('INSERT INTO favorites (user_id, item_type, item_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE created_at = CURRENT_TIMESTAMP');
+            $stmt->bind_param('isi', $user_id, $item_type, $item_id);
+            $stmt->execute(); $stmt->close();
+        }
     }
     exit('ok');
 }
@@ -319,43 +340,72 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['note_file'])) {
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     $target_folder_id = isset($_POST['parent_folder_id']) && $_POST['parent_folder_id'] !== '' && is_numeric($_POST['parent_folder_id'])
         ? intval($_POST['parent_folder_id']) : null;
+
+    // Map PHP upload error codes to human-readable messages
+    $php_upload_errors = [
+        UPLOAD_ERR_INI_SIZE   => 'File exceeds server upload limit (php.ini upload_max_filesize).',
+        UPLOAD_ERR_FORM_SIZE  => 'File exceeds form size limit.',
+        UPLOAD_ERR_PARTIAL    => 'File was only partially uploaded.',
+        UPLOAD_ERR_NO_FILE    => 'No file was selected for upload.',
+        UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder on server.',
+        UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk (permissions).',
+        UPLOAD_ERR_EXTENSION  => 'Upload blocked by a PHP extension.',
+    ];
+
     if ($target_folder_id !== null && !folder_belongs_to_user($conn, $target_folder_id, $user_id)) {
         $upload_error = "Invalid target folder!";
     } elseif ($file['error'] !== UPLOAD_ERR_OK) {
-        $upload_error = "No file uploaded or upload error.";
+        $upload_error = $php_upload_errors[$file['error']] ?? "Upload error (code: {$file['error']})";
     } elseif (empty($file_name)) {
         $upload_error = "Please enter a file name.";
     } elseif ($file['size'] > 10 * 1024 * 1024) {
-        $upload_error = "File must be less than 10 MB.";
+        $upload_error = "File must be less than 10 MB. Your file is " . round($file['size']/1024/1024, 1) . " MB.";
     } else {
         $rand_file = uniqid("file_", true) . "." . $ext;
         $target_dir = __DIR__ . '/uploads/notes/';
-        if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-        $target_path = $target_dir . $rand_file;
-        if (move_uploaded_file($file['tmp_name'], $target_path)) {
-            $mime = mime_content_type($target_path);
-            $db_path = 'uploads/notes/' . $rand_file;
-            if ($target_folder_id !== null) {
-                $stmt = $conn->prepare("INSERT INTO files (owner_id, name, file_path, mime_type, folder_id) VALUES (?, ?, ?, ?, ?)");
-                $stmt->bind_param('isssi', $user_id, $file_name, $db_path, $mime, $target_folder_id);
+        if (!is_dir($target_dir)) {
+            if (!mkdir($target_dir, 0775, true)) {
+                $upload_error = "Cannot create upload directory. Check server permissions.";
+            }
+        }
+        if ($upload_error === '') {
+            $target_path = $target_dir . $rand_file;
+            if (move_uploaded_file($file['tmp_name'], $target_path)) {
+                $mime = mime_content_type($target_path) ?: 'application/octet-stream';
+                $db_path = 'uploads/notes/' . $rand_file;
+                // Reconnect to remote DB before INSERT (prevents silent failures on long-idle connections)
+                if (function_exists('db_reconnect')) db_reconnect($conn);
+                if ($target_folder_id !== null) {
+                    $stmt = $conn->prepare("INSERT INTO files (owner_id, name, file_path, mime_type, folder_id) VALUES (?, ?, ?, ?, ?)");
+                    $stmt->bind_param('isssi', $user_id, $file_name, $db_path, $mime, $target_folder_id);
+                } else {
+                    $null = null;
+                    $stmt = $conn->prepare("INSERT INTO files (owner_id, name, file_path, mime_type, folder_id) VALUES (?, ?, ?, ?, ?)");
+                    $stmt->bind_param('isssi', $user_id, $file_name, $db_path, $mime, $null);
+                }
+                if ($stmt && $stmt->execute()) {
+                    $file_id = $conn->insert_id;
+                    $stmt->close();
+                    // Non-blocking AI indexing — errors are silently logged
+                    try {
+                        require_once 'includes/ai_service.php';
+                        index_file_content($conn, $file_id);
+                    } catch (\Throwable $e) {
+                        error_log("[NoteNest] AI indexing skipped for file $file_id: " . $e->getMessage());
+                    }
+                    $_SESSION['success_msg'] = "File uploaded successfully!";
+                    $upload_error = "";
+                } else {
+                    if (isset($stmt)) $stmt->close();
+                    @unlink($target_path); // Rollback: remove uploaded file if DB insert failed
+                    $upload_error = "Database error: could not save file record. " . htmlspecialchars($conn->error ?? '');
+                }
             } else {
-                $null = null;
-                $stmt = $conn->prepare("INSERT INTO files (owner_id, name, file_path, mime_type, folder_id) VALUES (?, ?, ?, ?, ?)");
-                $stmt->bind_param('isssi', $user_id, $file_name, $db_path, $mime, $null);
+                $upload_error = "Failed to save file to server. Check upload directory permissions.";
             }
-            if ($stmt->execute()) {
-                $file_id = $conn->insert_id;
-                require_once 'includes/ai_service.php';
-                index_file_content($conn, $file_id);
-            }
-            $stmt->close();
-            $_SESSION['success_msg'] = "File uploaded!";
-            $upload_error = "";
-        } else {
-            $upload_error = "Failed to save file.";
         }
     }
-    if ($upload_error == "") {
+    if ($upload_error === '') {
         $_SESSION['history_flatten'] = true;
         header("Location: my_note_nest.php" . ($current_folder_id ? "?folder=$current_folder_id" : ""));
         exit;
@@ -429,16 +479,30 @@ if (isset($_GET['delete_folder']) && is_numeric($_GET['delete_folder'])) {
     }
 }
 // ── LOAD FOLDERS (with course metadata) ───────────────────────
-// Each folder row: [id, name, is_course_root, course_id, course_color, course_code]
+if (file_exists(__DIR__ . '/includes/google_sync_engine.php')) {
+    if (function_exists('db_reconnect')) db_reconnect($conn);
+    require_once __DIR__ . '/includes/google_sync_engine.php';
+    if (empty($_SESSION['gc_repaired_' . $user_id])) {
+        gc_repair_and_link_courses($conn, $user_id);
+        $_SESSION['gc_repaired_' . $user_id] = true;
+    }
+}
+
+// Re-check connection right before folder query
+if (function_exists('db_reconnect')) db_reconnect($conn);
+
+// Each folder row: [id, name, is_course_root, course_id, course_color, course_code, course_section]
 $folders = [];
 if ($current_folder_id === null) {
     // Root view: all top-level folders, JOIN courses for course-root ones
     $stmt = $conn->prepare(
         "SELECT f.id, f.name, COALESCE(f.is_course_root,0) AS is_course_root,
                 f.course_id, COALESCE(c.color,'#6c757d') AS course_color,
-                COALESCE(c.code,'') AS course_code
+                COALESCE(c.code,'') AS course_code,
+                COALESCE(gc.section,'') AS course_section
          FROM folders f
          LEFT JOIN courses c ON f.course_id = c.id
+         LEFT JOIN google_courses gc ON (gc.course_id = c.id AND gc.user_id = f.owner_id)
          WHERE f.owner_id = ? AND f.parent_folder_id IS NULL
          ORDER BY f.is_course_root DESC, f.name ASC"
     );
@@ -448,9 +512,11 @@ if ($current_folder_id === null) {
     $stmt = $conn->prepare(
         "SELECT f.id, f.name, COALESCE(f.is_course_root,0) AS is_course_root,
                 f.course_id, COALESCE(c.color,'#6c757d') AS course_color,
-                COALESCE(c.code,'') AS course_code
+                COALESCE(c.code,'') AS course_code,
+                COALESCE(gc.section,'') AS course_section
          FROM folders f
          LEFT JOIN courses c ON f.course_id = c.id
+         LEFT JOIN google_courses gc ON (gc.course_id = c.id AND gc.user_id = f.owner_id)
          WHERE f.owner_id = ? AND f.parent_folder_id = ?
          ORDER BY f.name ASC"
     );
@@ -487,11 +553,15 @@ $breadcrumbs = get_folder_path($conn, $current_folder_id, $user_id);
 // ── Course-context: which course (if any) are we browsing inside? ─
 $current_course_info = null;
 if ($current_folder_id !== null) {
-    // Check current folder itself
+    // Check current folder itself (also fetch section from google_courses)
     $ci = $conn->prepare(
-        "SELECT f.is_course_root, f.course_id, c.name AS cname, c.code, c.color, c.description
-         FROM folders f LEFT JOIN courses c ON f.course_id = c.id
-         WHERE f.id = ? AND f.owner_id = ?"
+        "SELECT f.is_course_root, f.course_id, c.name AS cname, c.code, c.color, c.description,
+                COALESCE(gc.section, '') AS section
+         FROM folders f
+         LEFT JOIN courses c ON f.course_id = c.id
+         LEFT JOIN google_courses gc ON (gc.course_id = c.id AND gc.user_id = f.owner_id)
+         WHERE f.id = ? AND f.owner_id = ?
+         LIMIT 1"
     );
     $ci->bind_param('ii', $current_folder_id, $user_id); $ci->execute();
     $current_course_info = $ci->get_result()->fetch_assoc(); $ci->close();
@@ -499,9 +569,13 @@ if ($current_folder_id !== null) {
     if (empty($current_course_info['course_id'])) {
         foreach (array_reverse($breadcrumbs) as $bc) {
             $ca = $conn->prepare(
-                "SELECT f.is_course_root, f.course_id, c.name AS cname, c.code, c.color
-                 FROM folders f LEFT JOIN courses c ON f.course_id = c.id
-                 WHERE f.id = ? AND f.is_course_root = 1 AND f.owner_id = ?"
+                "SELECT f.is_course_root, f.course_id, c.name AS cname, c.code, c.color,
+                        COALESCE(gc.section, '') AS section
+                 FROM folders f
+                 LEFT JOIN courses c ON f.course_id = c.id
+                 LEFT JOIN google_courses gc ON (gc.course_id = c.id AND gc.user_id = f.owner_id)
+                 WHERE f.id = ? AND f.is_course_root = 1 AND f.owner_id = ?
+                 LIMIT 1"
             );
             $ca->bind_param('ii', $bc['id'], $user_id); $ca->execute();
             $ca_row = $ca->get_result()->fetch_assoc(); $ca->close();
@@ -510,10 +584,20 @@ if ($current_folder_id !== null) {
     }
 }
 
+// Ensure favorites table column item_type supports VARCHAR(50) and unique key
+@$conn->query("ALTER TABLE favorites MODIFY COLUMN item_type VARCHAR(50) NOT NULL");
+@$conn->query("ALTER TABLE favorites ADD UNIQUE KEY unique_user_item (user_id, item_type, item_id)");
+
 // Get favorites for this user
-$fav_ids = ['file' => [], 'folder' => []];
+$fav_ids = ['file' => [], 'folder' => [], 'course' => [], 'topic' => []];
 $fav_res = $conn->query("SELECT item_type, item_id FROM favorites WHERE user_id=$user_id");
-while ($row = $fav_res->fetch_assoc()) $fav_ids[$row['item_type']][] = $row['item_id'];
+if ($fav_res) {
+    while ($row = $fav_res->fetch_assoc()) {
+        $t = $row['item_type'];
+        if (!isset($fav_ids[$t])) $fav_ids[$t] = [];
+        $fav_ids[$t][] = (int)$row['item_id'];
+    }
+}
 
 // Get shared status for items
 $shared_items = ['file' => [], 'folder' => []];
@@ -678,8 +762,13 @@ if ($modal_message) {
             <span class="badge ms-1" style="background:<?php echo htmlspecialchars($current_course_info['color']); ?>;color:#fff;font-size:.72rem;border-radius:8px;">
               <?php echo htmlspecialchars($current_course_info['code'] ?? ''); ?>
             </span>
+            <?php if (!empty($current_course_info['section'])): ?>
+            <span class="badge ms-1" style="background:#6c757d;color:#fff;font-size:.68rem;border-radius:6px;">
+              Section: <?php echo htmlspecialchars($current_course_info['section']); ?>
+            </span>
+            <?php endif; ?>
           </div>
-          <div style="font-size:.78rem;color:#888;">Course materials folder</div>
+          <div style="font-size:.78rem;color:#888;">Course materials folder<?php echo !empty($current_course_info['section']) ? ' &mdash; ' . htmlspecialchars($current_course_info['section']) : ''; ?></div>
         </div>
         <a href="course_management.php" class="btn btn-sm"
            style="background:<?php echo htmlspecialchars($current_course_info['color']); ?>;color:#fff;border-radius:8px;font-size:.8rem;">
@@ -731,6 +820,11 @@ if ($modal_message) {
                       <?php echo htmlspecialchars($f['course_code']); ?>
                     </span>
                     <?php endif; ?>
+                    <?php if(!empty($f['course_section'])): ?>
+                    <span class="badge ms-1" style="background:#6c757d;color:#fff;font-size:.65rem;border-radius:6px;">
+                      <i class="fas fa-layer-group me-1" style="font-size:.6rem;"></i><?php echo htmlspecialchars($f['course_section']); ?>
+                    </span>
+                    <?php endif; ?>
                   </div>
                 </div>
               </div>
@@ -742,10 +836,11 @@ if ($modal_message) {
                   <i class="fas fa-folder-open me-1"></i>Open
                 </a>
                 <div class="d-flex gap-1">
+                  <?php $isCourseFav = in_array($f['id'], $fav_ids['folder']) || (!empty($fav_ids['course']) && in_array($f['id'], $fav_ids['course'])) || (!empty($f['course_id']) && !empty($fav_ids['course']) && in_array($f['course_id'], $fav_ids['course'])); ?>
                   <a href="#" class="btn btn-sm btn-outline-warning favorite-btn"
                      data-type="folder" data-id="<?php echo $f['id']; ?>"
-                     data-fav="<?php echo in_array($f['id'], $fav_ids['folder']) ? 1 : 0; ?>" title="Favorite">
-                    <i class="fa<?php echo in_array($f['id'], $fav_ids['folder']) ? 's' : 'r'; ?> fa-star"></i>
+                     data-fav="<?php echo $isCourseFav ? 1 : 0; ?>" title="Favorite">
+                    <i class="fa<?php echo $isCourseFav ? 's' : 'r'; ?> fa-star"></i>
                   </a>
                   <?php if (in_array($f['id'], $shared_items['folder'])): ?>
                   <a href="#" class="btn btn-sm btn-outline-success shared-status-btn"
@@ -791,10 +886,11 @@ if ($modal_message) {
                    class="btn btn-sm btn-outline-danger folder-action-btn" title="Delete Folder">
                   <i class="fas fa-trash"></i>
                 </a>
+                <?php $isFolderFav = in_array($f['id'], $fav_ids['folder']) || (!empty($fav_ids['topic']) && in_array($f['id'], $fav_ids['topic'])); ?>
                 <a href="#" class="btn btn-sm btn-outline-warning me-1 favorite-btn"
                    data-type="folder" data-id="<?php echo $f['id']; ?>"
-                   data-fav="<?php echo in_array($f['id'], $fav_ids['folder']) ? 1 : 0; ?>" title="Favorite">
-                  <i class="fa<?php echo in_array($f['id'], $fav_ids['folder']) ? 's' : 'r'; ?> fa-star"></i>
+                   data-fav="<?php echo $isFolderFav ? 1 : 0; ?>" title="Favorite">
+                  <i class="fa<?php echo $isFolderFav ? 's' : 'r'; ?> fa-star"></i>
                 </a>
                 <?php if (in_array($f['id'], $shared_items['folder'])): ?>
                 <a href="#" class="btn btn-sm btn-outline-success me-1 shared-status-btn"

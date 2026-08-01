@@ -293,15 +293,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // GET FILES for a course
     if ($action === 'get_course_files') {
         $course_id = (int)($_POST['course_id'] ?? 0);
+        // UNION: pick files tagged via file_course_tags OR directly via files.course_id
         $stmt = $conn->prepare(
-            "SELECT f.id, f.name, f.file_path, f.mime_type, t.title AS topic_title
+            "SELECT f.id, f.name, f.file_path, f.mime_type,
+                    t.title AS topic_title
              FROM file_course_tags fct
-             JOIN files f ON fct.file_id=f.id
-             LEFT JOIN course_topics t ON fct.topic_id=t.id
-             WHERE fct.course_id=? AND f.owner_id=?
-             ORDER BY fct.tagged_at DESC"
+             JOIN  files f ON fct.file_id = f.id
+             LEFT JOIN course_topics t ON fct.topic_id = t.id
+             WHERE fct.course_id = ? AND f.owner_id = ?
+             UNION
+             SELECT f.id, f.name, f.file_path, f.mime_type,
+                    fo.name AS topic_title
+             FROM files f
+             LEFT JOIN folders fo ON f.folder_id = fo.id
+             WHERE f.course_id = ? AND f.owner_id = ?
+               AND f.id NOT IN (
+                   SELECT file_id FROM file_course_tags WHERE course_id = ?
+               )
+             ORDER BY id DESC"
         );
-        $stmt->bind_param('ii', $course_id, $user_id);
+        $stmt->bind_param('iiiii', $course_id, $user_id, $course_id, $user_id, $course_id);
         $stmt->execute();
         $files = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         echo json_encode(['success'=>true,'files'=>$files]);
@@ -463,8 +474,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 // ── Load courses + topics (with folder_id) + tagged files ─────
+if (file_exists(__DIR__ . '/includes/google_sync_engine.php')) {
+    if (function_exists('db_reconnect')) db_reconnect($conn);
+    require_once __DIR__ . '/includes/google_sync_engine.php';
+    if (empty($_SESSION['gc_repaired_' . $user_id])) {
+        gc_repair_and_link_courses($conn, $user_id);
+        $_SESSION['gc_repaired_' . $user_id] = true;
+    }
+}
+
+if (function_exists('db_reconnect')) db_reconnect($conn);
+
 $courses = [];
-$res = $conn->prepare("SELECT id, name, code, description, color FROM courses WHERE user_id=? ORDER BY created_at DESC");
+$res = $conn->prepare(
+    "SELECT c.id, c.name, c.code, c.description, c.color,
+            COALESCE(gc.section, '') AS section,
+            gc.google_course_id
+     FROM courses c
+     LEFT JOIN google_courses gc ON (gc.course_id = c.id AND gc.user_id = c.user_id)
+     WHERE c.user_id=? ORDER BY c.created_at DESC"
+);
 $res->bind_param('i', $user_id);
 $res->execute();
 $result = $res->get_result();
@@ -912,7 +941,19 @@ $res->close();
             <div class="course-card" id="course-<?php echo $course['id']; ?>">
                 <!-- Course Header (colored) -->
                 <div class="course-header" style="background: <?php echo htmlspecialchars($course['color']); ?>;">
-                    <div class="course-name"><?php echo htmlspecialchars($course['name']); ?></div>
+                    <div class="course-name">
+                        <?php echo htmlspecialchars($course['name']); ?>
+                        <?php if (!empty($course['section'])): ?>
+                        <span class="badge ms-1" style="background:rgba(255,255,255,.25);color:#fff;font-size:.7rem;font-weight:600;">
+                            Section: <?php echo htmlspecialchars($course['section']); ?>
+                        </span>
+                        <?php endif; ?>
+                        <?php if (!empty($course['google_course_id'])): ?>
+                        <span class="badge ms-1" style="background:rgba(255,255,255,.3);color:#fff;font-size:.68rem;" title="Synced from Google Classroom">
+                            <i class="fab fa-google me-1"></i>Classroom
+                        </span>
+                        <?php endif; ?>
+                    </div>
                     <span class="course-code"><?php echo htmlspecialchars($course['code']); ?></span>
                     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:8px;"
                             onclick="deleteCourse(<?php echo $course['id']; ?>)"

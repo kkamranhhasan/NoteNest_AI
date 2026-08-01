@@ -235,7 +235,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <div class="overlay-panel overlay-right">
                 <h1>Already have an account?</h1>
                 <p>Sign in to start securely managing your notes and files!</p>
-                <button class="ghost"><a href="login.php">Sign In</a></button>
+                <button class="ghost" onclick="window.location.href='login.php'"><a href="login.php" style="color:inherit;text-decoration:none;">Sign In</a></button>
             </div>
         </div>
     </div>

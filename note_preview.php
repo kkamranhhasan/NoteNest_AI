@@ -5,6 +5,7 @@
 // Serves: text, image, pdf, audio, video, csv, docx-hint
 // ============================================================
 session_start();
+require_once 'config.php';
 require 'includes/db.php';
 
 if (!isset($_SESSION['user_id']) || !isset($_GET['file'])) {

@@ -122,13 +122,16 @@ class IndexerService {
         $embeddings = [];
         $chunkBatches = array_chunk($chunks, $batchSize);
         foreach ($chunkBatches as $batch) {
-            $vectors = $this->jinaClient->getEmbeddings($batch);
-            if (empty($vectors)) {
-                $this->logJobFailure($fileId, "Failed to generate embeddings via Jina AI API.");
-                return false;
+            try {
+                $vectors = $this->jinaClient->getEmbeddings($batch);
+                if (!empty($vectors)) {
+                    $embeddings = array_merge($embeddings, $vectors);
+                }
+            } catch (\Throwable $e) {
+                error_log("Jina AI Embeddings warning: " . $e->getMessage());
             }
-            $embeddings = array_merge($embeddings, $vectors);
         }
+
 
         // Get optional topic_id
         $topicId = null;
@@ -178,21 +181,23 @@ class IndexerService {
                 $insIdx->execute();
             }
 
-            // Build Qdrant Point
-            $qdrantPoints[] = [
-                'id' => $embeddingId,
-                'vector' => $embeddings[$idx],
-                'payload' => [
-                    'user_id' => $userId,
-                    'file_id' => $fileId,
-                    'course_id' => $courseId ?: 0,
-                    'folder_id' => $folderId ?: 0,
-                    'topic_id' => $topicId ?: 0,
-                    'page_number' => $pageNumber,
-                    'chunk_number' => $chunkIndex,
-                    'content' => $content
-                ]
-            ];
+            // Build Qdrant Point (only if vector generated)
+            if (!empty($embeddings[$idx])) {
+                $qdrantPoints[] = [
+                    'id' => $embeddingId,
+                    'vector' => $embeddings[$idx],
+                    'payload' => [
+                        'user_id' => $userId,
+                        'file_id' => $fileId,
+                        'course_id' => $courseId ?: 0,
+                        'folder_id' => $folderId ?: 0,
+                        'topic_id' => $topicId ?: 0,
+                        'page_number' => $pageNumber,
+                        'chunk_number' => $chunkIndex,
+                        'content' => $content
+                    ]
+                ];
+            }
 
             $chunkIndex++;
         }

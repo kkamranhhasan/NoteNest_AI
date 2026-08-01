@@ -1,5 +1,6 @@
 <?php
 require 'includes/auth.php';
+require_once 'config.php';
 require 'includes/db.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {

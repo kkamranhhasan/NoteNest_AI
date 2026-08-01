@@ -1,84 +1,148 @@
 <?php
 require 'includes/auth.php';
+require_once 'config.php';
 require 'includes/db.php';
 require_once 'includes/functions.php';
 $user_id = $_SESSION['user_id'];
 $modal_message = '';
 
+// Auto-migrate schema to ensure VARCHAR(50) and unique key constraint
+@$conn->query("ALTER TABLE favorites MODIFY COLUMN item_type VARCHAR(50) NOT NULL");
+@$conn->query("ALTER TABLE favorites ADD UNIQUE KEY unique_user_item (user_id, item_type, item_id)");
+
 // Handle favorite/unfavorite
 if (isset($_POST['favorite_item'])) {
-    $item_type = $_POST['item_type'];
-    $item_id = intval($_POST['item_id']);
-    $is_fav = isset($_POST['is_fav']) ? 1 : 0;
-    if ($is_fav) {
-        $stmt = $conn->prepare('DELETE FROM favorites WHERE user_id=? AND item_type=? AND item_id=?');
-        $stmt->bind_param('isi', $user_id, $item_type, $item_id);
-        $stmt->execute();
-        $stmt->close();
-    } else {
-        $stmt = $conn->prepare('INSERT IGNORE INTO favorites (user_id, item_type, item_id) VALUES (?, ?, ?)');
-        $stmt->bind_param('isi', $user_id, $item_type, $item_id);
-        $stmt->execute();
-        $stmt->close();
+    $item_type = trim($_POST['item_type'] ?? '');
+    $item_id   = intval($_POST['item_id'] ?? 0);
+    $is_fav    = isset($_POST['is_fav']) && $_POST['is_fav'] == 1;
+
+    if (in_array($item_type, ['file', 'folder', 'course', 'topic']) && $item_id > 0) {
+        if ($is_fav) {
+            $stmt = $conn->prepare('DELETE FROM favorites WHERE user_id=? AND item_type=? AND item_id=?');
+            $stmt->bind_param('isi', $user_id, $item_type, $item_id);
+            $stmt->execute();
+            $stmt->close();
+        } else {
+            $stmt = $conn->prepare('INSERT INTO favorites (user_id, item_type, item_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE created_at = CURRENT_TIMESTAMP');
+            $stmt->bind_param('isi', $user_id, $item_type, $item_id);
+            $stmt->execute();
+            $stmt->close();
+        }
     }
     exit('ok');
 }
 
 // Get favorites for this user
-$fav_ids = ['file'=>[], 'folder'=>[]];
+$fav_ids = ['file' => [], 'folder' => [], 'course' => [], 'topic' => []];
 $res = $conn->query("SELECT item_type, item_id FROM favorites WHERE user_id=$user_id");
-while ($row = $res->fetch_assoc()) {
-    $fav_ids[$row['item_type']][] = $row['item_id'];
+if ($res) {
+    while ($row = $res->fetch_assoc()) {
+        $t = $row['item_type'];
+        if (!isset($fav_ids[$t])) $fav_ids[$t] = [];
+        $fav_ids[$t][] = (int)$row['item_id'];
+    }
 }
 
-// Get favorite folders with owner info
-$favorite_folders = [];
+// Collect all target folder IDs (direct folders, course root folders, topic subfolders)
+$target_folder_ids = [];
 if (!empty($fav_ids['folder'])) {
-    $folder_ids = implode(',', $fav_ids['folder']);
+    foreach ($fav_ids['folder'] as $id) $target_folder_ids[] = $id;
+}
+if (!empty($fav_ids['course'])) {
+    $cIds = implode(',', array_map('intval', $fav_ids['course']));
+    $cRes = $conn->query("SELECT id FROM folders WHERE id IN ($cIds) UNION SELECT id FROM folders WHERE course_id IN ($cIds) AND is_course_root = 1");
+    if ($cRes) {
+        while ($r = $cRes->fetch_assoc()) $target_folder_ids[] = (int)$r['id'];
+    }
+}
+if (!empty($fav_ids['topic'])) {
+    $tIds = implode(',', array_map('intval', $fav_ids['topic']));
+    $tRes = $conn->query("SELECT id FROM folders WHERE id IN ($tIds) UNION SELECT folder_id FROM course_topics WHERE id IN ($tIds) AND folder_id IS NOT NULL");
+    if ($tRes) {
+        while ($r = $tRes->fetch_assoc()) $target_folder_ids[] = (int)$r['id'];
+    }
+}
+$target_folder_ids = array_unique(array_filter($target_folder_ids));
+
+// Get favorite folders with owner info & course metadata
+$favorite_folders = [];
+if (!empty($target_folder_ids)) {
+    $folder_ids_str = implode(',', $target_folder_ids);
     $stmt = $conn->prepare("
         SELECT f.id, f.name, f.created_at, u.name as owner_name, 
-               CASE WHEN f.owner_id = ? THEN 'own' ELSE 'shared' END as access_type
+               CASE WHEN f.owner_id = ? THEN 'own' ELSE 'shared' END as access_type,
+               COALESCE(f.is_course_root, 0) as is_course_root,
+               c.code as course_code, c.color as course_color
         FROM folders f 
         JOIN users u ON f.owner_id = u.id
-        WHERE f.id IN ($folder_ids)
+        LEFT JOIN courses c ON f.course_id = c.id
+        WHERE f.id IN ($folder_ids_str)
         AND (f.owner_id = ? OR EXISTS (
             SELECT 1 FROM shared_access sa 
             WHERE sa.item_type='folder' AND sa.item_id=f.id AND sa.shared_with_user_id=?
         ))
         ORDER BY f.created_at DESC
     ");
-    $stmt->bind_param('iii', $user_id, $user_id, $user_id);
-    $stmt->execute();
-    $stmt->bind_result($fid, $fname, $fcreated, $owner_name, $access_type);
-    while ($stmt->fetch()) {
-        $favorite_folders[] = [$fid, $fname, $fcreated, $owner_name, $access_type];
+    if ($stmt) {
+        $stmt->bind_param('iii', $user_id, $user_id, $user_id);
+        $stmt->execute();
+        $resF = $stmt->get_result();
+        while ($row = $resF->fetch_assoc()) {
+            $favorite_folders[] = [
+                'id'           => (int)$row['id'],
+                'name'         => $row['name'],
+                'created_at'   => $row['created_at'],
+                'owner_name'   => $row['owner_name'],
+                'access_type'  => $row['access_type'],
+                'is_course_root'=> (int)$row['is_course_root'],
+                'course_code'  => $row['course_code'],
+                'course_color' => $row['course_color'] ?: '#197f8f',
+            ];
+        }
+        $stmt->close();
     }
-    $stmt->close();
 }
+
+// Collect all target file IDs
+$target_file_ids = [];
+if (!empty($fav_ids['file'])) {
+    foreach ($fav_ids['file'] as $id) $target_file_ids[] = $id;
+}
+$target_file_ids = array_unique(array_filter($target_file_ids));
 
 // Get favorite files with owner info
 $favorite_files = [];
-if (!empty($fav_ids['file'])) {
-    $file_ids = implode(',', $fav_ids['file']);
+if (!empty($target_file_ids)) {
+    $file_ids_str = implode(',', $target_file_ids);
     $stmt = $conn->prepare("
         SELECT f.id, f.name, f.file_path, f.mime_type, f.created_at, u.name as owner_name,
                CASE WHEN f.owner_id = ? THEN 'own' ELSE 'shared' END as access_type
         FROM files f 
         JOIN users u ON f.owner_id = u.id
-        WHERE f.id IN ($file_ids)
+        WHERE f.id IN ($file_ids_str)
         AND (f.owner_id = ? OR EXISTS (
             SELECT 1 FROM shared_access sa 
             WHERE sa.item_type='file' AND sa.item_id=f.id AND sa.shared_with_user_id=?
         ))
         ORDER BY f.created_at DESC
     ");
-    $stmt->bind_param('iii', $user_id, $user_id, $user_id);
-    $stmt->execute();
-    $stmt->bind_result($fid, $fname, $fpath, $fmime, $fcreated, $owner_name, $access_type);
-    while ($stmt->fetch()) {
-        $favorite_files[] = [$fid, $fname, $fpath, $fmime, $fcreated, $owner_name, $access_type];
+    if ($stmt) {
+        $stmt->bind_param('iii', $user_id, $user_id, $user_id);
+        $stmt->execute();
+        $resFile = $stmt->get_result();
+        while ($row = $resFile->fetch_assoc()) {
+            $favorite_files[] = [
+                'id'          => (int)$row['id'],
+                'name'        => $row['name'],
+                'file_path'   => $row['file_path'],
+                'mime_type'   => $row['mime_type'],
+                'created_at'  => $row['created_at'],
+                'owner_name'  => $row['owner_name'],
+                'access_type' => $row['access_type'],
+            ];
+        }
+        $stmt->close();
     }
-    $stmt->close();
 }
 
 if (isset($_SESSION['success_msg'])) {
@@ -120,7 +184,7 @@ if ($modal_message) {
     <div class="col-md-8">
       <!-- FAVORITE FOLDERS HEADING -->
       <div class="section-heading mb-2">
-        <i class="fas fa-folder-open"></i> Favorite Folders
+        <i class="fas fa-folder-open"></i> Favorite Folders &amp; Courses
       </div>
       
       <!-- FAVORITE FOLDER LIST -->
@@ -131,25 +195,30 @@ if ($modal_message) {
           <?php foreach($favorite_folders as $f): ?>
             <li class="list-group-item d-flex align-items-center justify-content-between">
               <div>
-                <?php if ($f[4] === 'own'): ?>
-                  <a href="my_note_nest.php?folder=<?= $f[0] ?>" class="folder-link">
-                    <i class="fa fa-folder folder-icon"></i><?= htmlspecialchars($f[1]) ?>
+                <?php if ($f['access_type'] === 'own'): ?>
+                  <a href="my_note_nest.php?folder=<?= $f['id'] ?>" class="folder-link text-decoration-none fw-semibold">
+                    <i class="fa fa-folder folder-icon me-1" style="color:<?= htmlspecialchars($f['course_color']) ?>"></i><?= htmlspecialchars($f['name']) ?>
                   </a>
                 <?php else: ?>
-                  <a href="shared_note_nest.php?folder=<?= $f[0] ?>" class="folder-link">
-                    <i class="fa fa-folder folder-icon"></i><?= htmlspecialchars($f[1]) ?>
+                  <a href="shared_note_nest.php?folder=<?= $f['id'] ?>" class="folder-link text-decoration-none fw-semibold">
+                    <i class="fa fa-folder folder-icon me-1"></i><?= htmlspecialchars($f['name']) ?>
                   </a>
                 <?php endif; ?>
-                <small class="text-muted d-block">
-                  <?= $f[4] === 'own' ? 'My folder' : 'Shared by: ' . htmlspecialchars($f[3]) ?>
-                  <span class="badge bg-<?= $f[4] === 'own' ? 'primary' : 'info' ?>">
-                    <?= $f[4] === 'own' ? 'Owner' : 'View Only' ?>
+                <?php if (!empty($f['course_code'])): ?>
+                  <span class="badge ms-1" style="background:<?= htmlspecialchars($f['course_color']) ?>;color:#fff;font-size:.68rem;">
+                    <?= htmlspecialchars($f['course_code']) ?>
+                  </span>
+                <?php endif; ?>
+                <small class="text-muted d-block mt-1">
+                  <?= $f['access_type'] === 'own' ? 'My folder' : 'Shared by: ' . htmlspecialchars($f['owner_name']) ?>
+                  <span class="badge bg-<?= $f['access_type'] === 'own' ? 'primary' : 'info' ?>">
+                    <?= $f['access_type'] === 'own' ? 'Owner' : 'View Only' ?>
                   </span>
                 </small>
-                <small class="text-muted">Created: <?= date('d M Y, H:i', strtotime($f[2])) ?></small>
+                <small class="text-muted">Created: <?= date('d M Y, H:i', strtotime($f['created_at'])) ?></small>
               </div>
               <div>
-                <a href="#" class="btn btn-sm btn-outline-warning me-1 favorite-btn" data-type="folder" data-id="<?= $f[0] ?>" data-fav="1" title="Remove from Favorites">
+                <a href="#" class="btn btn-sm btn-outline-warning me-1 favorite-btn" data-type="folder" data-id="<?= $f['id'] ?>" data-fav="1" title="Remove from Favorites">
                   <i class="fas fa-star"></i>
                 </a>
               </div>
@@ -174,64 +243,48 @@ if ($modal_message) {
                   <th>#</th>
                   <th>File Name</th>
                   <th>Type</th>
-                  <th><?= $f[4] === 'own' ? 'My file' : 'Shared By' ?></th>
+                  <th>Owner / Status</th>
                   <th>Created Date</th>
                   <th class="text-end">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                <?php foreach($favorite_files as $index=>$n): ?>
+                <?php foreach($favorite_files as $index=>$n): 
+                  $mime = $n['mime_type'] ?? '';
+                  $is_own = ($n['access_type'] ?? '') === 'own';
+                ?>
                   <tr>
                     <th><?= $index+1 ?></th>
-                    <td><?= htmlspecialchars($n[1]) ?></td>
+                    <td><?= htmlspecialchars($n['name']) ?></td>
                     <td>
-                      <?php if (strpos($n[3], 'image/') === 0): ?>
+                      <?php if (strpos($mime, 'image/') === 0): ?>
                         <span class="badge bg-success">Image</span>
-                      <?php elseif (strpos($n[3], 'text/') === 0): ?>
+                      <?php elseif (strpos($mime, 'text/') === 0): ?>
                         <span class="badge bg-info">Text</span>
-                      <?php elseif (strpos($n[3], 'application/pdf') === 0): ?>
+                      <?php elseif (strpos($mime, 'application/pdf') === 0): ?>
                         <span class="badge bg-danger">PDF</span>
                       <?php else: ?>
                         <span class="badge bg-secondary">File</span>
                       <?php endif; ?>
                     </td>
                     <td>
-                      <?php if ($n[5] === 'own'): ?>
+                      <?php if ($is_own): ?>
                         <span class="text-primary">My file</span>
                       <?php else: ?>
-                        <?= htmlspecialchars($n[4]) ?>
+                        <?= htmlspecialchars($n['owner_name'] ?? 'Shared') ?>
                       <?php endif; ?>
                     </td>
-                    <td><?= date('d M Y, H:i', strtotime($n[4])) ?></td>
+                    <td><?= date('d M Y, H:i', strtotime($n['created_at'])) ?></td>
                     <td class="text-end">
-                      <?php if ($n[5] === 'own'): ?>
-                        <a href="note_download.php?id=<?= $n[0] ?>" title="Download" class="btn btn-sm btn-outline-secondary me-1">
-                          <i class="fas fa-download"></i>
-                        </a>
-                      <?php else: ?>
-                        <a href="note_download.php?id=<?= $n[0] ?>" title="Download" class="btn btn-sm btn-outline-secondary me-1">
-                          <i class="fas fa-download"></i>
-                        </a>
-                      <?php endif; ?>
+                      <a href="note_download.php?id=<?= $n['id'] ?>" title="Download" class="btn btn-sm btn-outline-secondary me-1">
+                        <i class="fas fa-download"></i>
+                      </a>
                       
-                      <?php if (strpos($n[3], 'image/') === 0): ?>
-                        <button type="button" class="btn btn-sm btn-outline-info me-1 preview-btn"
-                                data-file="<?= htmlspecialchars($n[2]) ?>" data-name="<?= htmlspecialchars($n[1]) ?>" data-type="image" title="Preview">
-                          <i class="fas fa-eye"></i>
-                        </button>
-                      <?php elseif (strpos($n[3], 'text/') === 0): ?>
-                        <button type="button" class="btn btn-sm btn-outline-info me-1 preview-btn"
-                                data-file="<?= htmlspecialchars($n[2]) ?>" data-name="<?= htmlspecialchars($n[1]) ?>" data-type="text" title="Preview">
-                          <i class="fas fa-eye"></i>
-                        </button>
-                      <?php elseif (strpos($n[3], 'application/pdf') === 0): ?>
-                        <button type="button" class="btn btn-sm btn-outline-info me-1 preview-btn"
-                                data-file="<?= htmlspecialchars($n[2]) ?>" data-name="<?= htmlspecialchars($n[1]) ?>" data-type="pdf" title="Preview">
-                          <i class="fas fa-eye"></i>
-                        </button>
-                      <?php endif; ?>
+                      <a href="note_preview.php?file=<?= $n['id'] ?>" target="_blank" class="btn btn-sm btn-outline-info me-1" title="Preview">
+                        <i class="fas fa-eye"></i>
+                      </a>
                       
-                      <a href="#" class="btn btn-sm btn-outline-warning me-1 favorite-btn" data-type="file" data-id="<?= $n[0] ?>" data-fav="1" title="Remove from Favorites">
+                      <a href="#" class="btn btn-sm btn-outline-warning me-1 favorite-btn" data-type="file" data-id="<?= $n['id'] ?>" data-fav="1" title="Remove from Favorites">
                         <i class="fas fa-star"></i>
                       </a>
                     </td>

@@ -65,12 +65,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <div class="form-container sign-in-container">
             <form action="login.php" method="POST">
                 <h1>Sign In to NoteNest</h1>
-                <div class="social-container">
-                    <a href="#" class="social"><i class="fab fa-facebook-f"></i></a>
-                    <a href="#" class="social"><i class="fab fa-google-plus-g"></i></a>
-                    <a href="#" class="social"><i class="fab fa-linkedin-in"></i></a>
-                </div>
-                <span>or use your NoteNest credentials</span>
                 <input type="email"    name="email"    required placeholder="Email"    value="<?php echo htmlspecialchars($email); ?>" />
                 <input type="password" name="password" required placeholder="Password" />
                 <a href="#">Forgot your password?</a>
@@ -92,7 +86,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 <div class="overlay-panel overlay-right">
                     <h1>Manage Your Files!</h1>
                     <p>Welcome to NoteNest. Don't have an account?</p>
-                    <button class="ghost"><a href="register.php">Sign Up</a></button>
+                    <button class="ghost" onclick="window.location.href='register.php'"><a href="register.php" style="color:inherit;text-decoration:none;">Sign Up</a></button>
                 </div>
             </div>
         </div>

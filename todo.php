@@ -1,7 +1,7 @@
 <?php
 require 'includes/auth.php';
+require_once 'config.php';
 require 'includes/db.php';
-include 'includes/navbar.php';
 
 $user_id = $_SESSION['user_id'];
 $modal_message = "";
@@ -57,7 +57,9 @@ if (isset($_GET['done']) && is_numeric($_GET['done'])) {
 // --- Fetch Todos ---
 $todos = [];
 $res = $conn->query("SELECT id, title, event_datetime, details, status FROM todos WHERE user_id=$user_id ORDER BY event_datetime ASC");
-while ($row = $res->fetch_assoc()) $todos[] = $row;
+if ($res) {
+    while ($row = $res->fetch_assoc()) $todos[] = $row;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -76,6 +78,7 @@ while ($row = $res->fetch_assoc()) $todos[] = $row;
   </style>
 </head>
 <body>
+<?php include 'includes/navbar.php'; ?>
 <div class="container py-4">
   <div class="row g-4">
     <div class="col-md-5">

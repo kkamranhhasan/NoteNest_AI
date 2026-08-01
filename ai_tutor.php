@@ -8,6 +8,18 @@ require 'config.php';
 require 'includes/ai_service.php';
 
 $user_id = $_SESSION['user_id'];
+require_once 'includes/db.php';
+// Note: Indexing is deferred — runs only when files are uploaded, not on page load
+// to prevent memory exhaustion on shared hosting (InfinityFree 512MB limit)
+if (file_exists(__DIR__ . '/includes/google_sync_engine.php')) {
+    if (function_exists('db_reconnect')) db_reconnect($conn);
+    require_once __DIR__ . '/includes/google_sync_engine.php';
+    if (empty($_SESSION['gc_repaired_' . $user_id])) {
+        gc_repair_and_link_courses($conn, $user_id);
+        $_SESSION['gc_repaired_' . $user_id] = true;
+    }
+}
+
 
 // ── Handle AJAX Chat Request ──────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -163,51 +175,72 @@ If the answer or topic is unavailable in the provided context, reply exactly:
         exit;
     }
 
+    // ── GET TOPICS ────────────────────────────────────────────
+    if ($action === 'get_topics') {
+        $course_id = (int)($_POST['course_id'] ?? 0);
+        error_log("[NoteNest AI Tutor get_topics] user_id=$user_id, course_id=$course_id");
+        $topics = [];
+        if ($course_id > 0) {
+            // Verify ownership
+            $cq = $conn->prepare("SELECT id FROM courses WHERE id = ? AND user_id = ?");
+            $cq->bind_param('ii', $course_id, $user_id);
+            $cq->execute();
+            if ($cq->get_result()->num_rows > 0) {
+                $stmt = $conn->prepare("SELECT id, title, week_no, folder_id FROM course_topics WHERE course_id = ? ORDER BY sort_order ASC, week_no ASC, title ASC");
+                $stmt->bind_param('i', $course_id);
+                $stmt->execute();
+                $topics = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                $stmt->close();
+            }
+            $cq->close();
+        } else {
+            $stmt = $conn->prepare("SELECT ct.id, ct.title, ct.week_no, ct.folder_id FROM course_topics ct JOIN courses c ON ct.course_id = c.id WHERE c.user_id = ? ORDER BY ct.sort_order ASC, ct.title ASC");
+            $stmt->bind_param('i', $user_id);
+            $stmt->execute();
+            $topics = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+        }
+        error_log("[NoteNest AI Tutor get_topics] Returning " . count($topics) . " topics");
+        echo json_encode(['success' => true, 'topics' => $topics, 'course_id' => $course_id]);
+        exit;
+    }
+
     // ── GET FOLDERS ───────────────────────────────────────────
     if ($action === 'get_folders') {
-        $course_id = (int)($_POST['course_id'] ?? 0);
-        $topic_id  = (int)($_POST['topic_id'] ?? 0);
-        
+        $course_id        = (int)($_POST['course_id'] ?? 0);
+        $topic_id         = (int)($_POST['topic_id']  ?? 0);
         $target_folder_id = 0;
+        $folders          = [];
+        error_log("[NoteNest AI Tutor get_folders] user_id=$user_id, course_id=$course_id, topic_id=$topic_id");
+
         if ($topic_id > 0) {
-            $tstmt = $conn->prepare("SELECT folder_id FROM course_topics WHERE id = ?");
+            $tstmt = $conn->prepare("SELECT folder_id, course_id FROM course_topics WHERE id = ?");
             $tstmt->bind_param('i', $topic_id);
             $tstmt->execute();
-            $tstmt->bind_result($fId);
+            $tstmt->bind_result($fId, $cId);
             if ($tstmt->fetch()) {
                 $target_folder_id = (int)$fId;
+                if ($course_id === 0 && $cId) $course_id = (int)$cId;
             }
             $tstmt->close();
+            error_log("[NoteNest AI Tutor get_folders] topic_id=$topic_id → target_folder_id=$target_folder_id, course_id=$course_id");
         }
 
-        if ($course_id > 0) {
-            $stmt = $conn->prepare("SELECT id, name FROM folders WHERE course_id = ? AND owner_id = ?");
-            $stmt->bind_param('ii', $course_id, $user_id);
+        if ($topic_id > 0 && $target_folder_id > 0) {
+            $stmt = $conn->prepare("SELECT id, name, parent_folder_id, course_id FROM folders WHERE owner_id = ? AND (id = ? OR parent_folder_id = ?) ORDER BY name ASC");
+            $stmt->bind_param('iii', $user_id, $target_folder_id, $target_folder_id);
+        } elseif ($course_id > 0) {
+            $stmt = $conn->prepare("SELECT id, name, parent_folder_id, course_id FROM folders WHERE owner_id = ? AND course_id = ? ORDER BY name ASC");
+            $stmt->bind_param('ii', $user_id, $course_id);
         } else {
-            $stmt = $conn->prepare("SELECT id, name FROM folders WHERE owner_id = ?");
+            $stmt = $conn->prepare("SELECT id, name, parent_folder_id, course_id FROM folders WHERE owner_id = ? ORDER BY name ASC");
             $stmt->bind_param('i', $user_id);
         }
         $stmt->execute();
         $folders = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
+        error_log("[NoteNest AI Tutor get_folders] Returning " . count($folders) . " folders, target_folder_id=$target_folder_id");
         echo json_encode(['success' => true, 'folders' => $folders, 'target_folder_id' => $target_folder_id]);
-        exit;
-    }
-
-    // ── GET TOPICS ────────────────────────────────────────────
-    if ($action === 'get_topics') {
-        $course_id = (int)($_POST['course_id'] ?? 0);
-        if ($course_id > 0) {
-            $stmt = $conn->prepare("SELECT id, title FROM course_topics WHERE course_id = ?");
-            $stmt->bind_param('i', $course_id);
-        } else {
-            $stmt = $conn->prepare("SELECT ct.id, ct.title FROM course_topics ct JOIN courses c ON ct.course_id = c.id WHERE c.user_id = ?");
-            $stmt->bind_param('i', $user_id);
-        }
-        $stmt->execute();
-        $topics = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        $stmt->close();
-        echo json_encode(['success' => true, 'topics' => $topics]);
         exit;
     }
 
@@ -215,38 +248,57 @@ If the answer or topic is unavailable in the provided context, reply exactly:
     if ($action === 'get_files') {
         $course_id = (int)($_POST['course_id'] ?? 0);
         $folder_id = (int)($_POST['folder_id'] ?? 0);
-        $topic_id  = (int)($_POST['topic_id'] ?? 0);
+        $topic_id  = (int)($_POST['topic_id']  ?? 0);
+        $files     = [];
+        error_log("[NoteNest AI Tutor get_files] user_id=$user_id, course_id=$course_id, topic_id=$topic_id, folder_id=$folder_id");
 
-        $sql = "SELECT DISTINCT f.id, f.name FROM files f
-                LEFT JOIN file_course_tags fct ON fct.file_id = f.id
-                LEFT JOIN folders fo ON f.folder_id = fo.id
-                WHERE f.owner_id = ?";
-        $params = [$user_id];
-        $types = 'i';
-
-        if ($course_id > 0) {
-            $sql .= " AND (f.course_id = ? OR fct.course_id = ? OR fo.course_id = ?)";
-            $params[] = $course_id;
-            $params[] = $course_id;
-            $params[] = $course_id;
-            $types .= 'iii';
-        }
         if ($folder_id > 0) {
-            $sql .= " AND f.folder_id = ?";
-            $params[] = $folder_id;
-            $types .= 'i';
-        }
-        if ($topic_id > 0) {
-            $sql .= " AND fct.topic_id = ?";
-            $params[] = $topic_id;
-            $types .= 'i';
-        }
+            $stmt = $conn->prepare("SELECT DISTINCT f.id, f.name FROM files f WHERE f.owner_id = ? AND f.folder_id = ? ORDER BY f.name ASC");
+            $stmt->bind_param('ii', $user_id, $folder_id);
+            $stmt->execute();
+            $files = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+            // If folder empty, fall through to topic
+            if (empty($files) && $topic_id > 0) {
+                $stmt2 = $conn->prepare("SELECT DISTINCT f.id, f.name FROM files f LEFT JOIN file_course_tags fct ON fct.file_id = f.id WHERE f.owner_id = ? AND fct.topic_id = ? ORDER BY f.name ASC");
+                $stmt2->bind_param('ii', $user_id, $topic_id);
+                $stmt2->execute();
+                $files = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+                $stmt2->close();
+            }
+        } elseif ($topic_id > 0) {
+            $tFolderId = 0;
+            $tfStmt = $conn->prepare("SELECT folder_id FROM course_topics WHERE id = ?");
+            $tfStmt->bind_param('i', $topic_id);
+            $tfStmt->execute();
+            $tfStmt->bind_result($tfRes);
+            if ($tfStmt->fetch() && $tfRes) { $tFolderId = (int)$tfRes; }
+            $tfStmt->close();
 
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param($types, ...$params);
-        $stmt->execute();
-        $files = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        $stmt->close();
+            if ($tFolderId > 0) {
+                $stmt = $conn->prepare("SELECT DISTINCT f.id, f.name FROM files f LEFT JOIN file_course_tags fct ON fct.file_id = f.id WHERE f.owner_id = ? AND (f.folder_id = ? OR fct.topic_id = ?) ORDER BY f.name ASC");
+                $stmt->bind_param('iii', $user_id, $tFolderId, $topic_id);
+            } else {
+                $stmt = $conn->prepare("SELECT DISTINCT f.id, f.name FROM files f LEFT JOIN file_course_tags fct ON fct.file_id = f.id WHERE f.owner_id = ? AND fct.topic_id = ? ORDER BY f.name ASC");
+                $stmt->bind_param('ii', $user_id, $topic_id);
+            }
+            $stmt->execute();
+            $files = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+        } elseif ($course_id > 0) {
+            $stmt = $conn->prepare("SELECT DISTINCT f.id, f.name FROM files f LEFT JOIN file_course_tags fct ON fct.file_id = f.id LEFT JOIN folders fo ON f.folder_id = fo.id WHERE f.owner_id = ? AND (f.course_id = ? OR fct.course_id = ? OR fo.course_id = ?) ORDER BY f.name ASC");
+            $stmt->bind_param('iiii', $user_id, $course_id, $course_id, $course_id);
+            $stmt->execute();
+            $files = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+        } else {
+            $stmt = $conn->prepare("SELECT DISTINCT f.id, f.name FROM files f WHERE f.owner_id = ? ORDER BY f.name ASC");
+            $stmt->bind_param('i', $user_id);
+            $stmt->execute();
+            $files = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+        }
+        error_log("[NoteNest AI Tutor get_files] Returning " . count($files) . " files");
         echo json_encode(['success' => true, 'files' => $files]);
         exit;
     }
@@ -841,7 +893,7 @@ $initial_session = bin2hex(random_bytes(16));
             <div class="ai-avatar"><i class="fas fa-robot"></i></div>
             <div class="ai-info">
                 <h5>NoteNest AI Tutor</h5>
-                <span><i class="fas fa-circle" style="font-size:.6rem;"></i> Powered by Gemini 2.5 Flash</span>
+                <span><i class="fas fa-circle" style="font-size:.6rem;"></i> Powered by Groq AI (Llama 3.3)</span>
             </div>
             <div class="token-badge" id="tokenBadge">
                 <i class="fas fa-bolt"></i> Ready
@@ -931,6 +983,8 @@ $('#btnSend').on('click', sendMessage);
 // ── RAG UI Selectors Change Handlers ───────────────────────────
 $('#courseSelect').on('change', function() {
     const courseId = $(this).val();
+    console.log('[NoteNest AI Tutor] Course changed → course_id:', courseId);
+
     if (courseId == 0) {
         $('#topicSelect').val('0').html('<option value="0">🏷️ Select Topic...</option>').prop('disabled', true);
         $('#folderSelect').val('0').html('<option value="0">📁 Select Folder...</option>').prop('disabled', true);
@@ -941,65 +995,101 @@ $('#courseSelect').on('change', function() {
         return;
     }
 
-    // Load topics
-    $.post('ai_tutor.php', { action: 'get_topics', course_id: courseId }, function(res) {
+    // Step 1: Load topics for this course
+    console.log('[NoteNest AI Tutor] Fetching topics for course_id:', courseId);
+    $.get('get_topics.php', { course_id: courseId }, function(res) {
+        console.log('[NoteNest AI Tutor] get_topics.php response:', res);
         if (res.success) {
             let html = '<option value="0">🏷️ Select Topic...</option>';
+            if (res.topics.length === 0) {
+                html += '<option value="0" disabled>No topics found</option>';
+            }
             res.topics.forEach(t => {
                 html += `<option value="${t.id}">${escHtml(t.title)}</option>`;
             });
-            $('#topicSelect').html(html).prop('disabled', false);
+            $('#topicSelect').html(html).prop('disabled', res.topics.length === 0);
+        } else {
+            console.error('[NoteNest AI Tutor] get_topics.php failed:', res);
+            $('#topicSelect').html('<option value="0">🏷️ Select Topic...</option>').prop('disabled', true);
         }
-    }, 'json');
+    }, 'json').fail(function(xhr) {
+        console.error('[NoteNest AI Tutor] get_topics.php AJAX error:', xhr.status, xhr.responseText);
+    });
 
-    // Clear folder dropdown & load files of the course
+    // Reset folder dropdown
     $('#folderSelect').val('0').html('<option value="0">📁 Select Folder...</option>').prop('disabled', true);
+    // Load files at course level
     loadFiles();
 });
 
 $('#topicSelect').on('change', function() {
-    const topicId = $(this).val();
+    const topicId  = $(this).val();
     const courseId = $('#courseSelect').val();
-    
+    console.log('[NoteNest AI Tutor] Topic changed → topic_id:', topicId, 'course_id:', courseId);
+
     if (topicId == 0) {
         $('#folderSelect').val('0').html('<option value="0">📁 Select Folder...</option>').prop('disabled', true);
         loadFiles();
         return;
     }
 
-    // Load folders corresponding to this course/topic
-    $.post('ai_tutor.php', { action: 'get_folders', course_id: courseId, topic_id: topicId }, function(res) {
+    // Step 2: Load folders for this topic
+    console.log('[NoteNest AI Tutor] Fetching folders for topic_id:', topicId, 'course_id:', courseId);
+    $.get('get_folders.php', { course_id: courseId, topic_id: topicId }, function(res) {
+        console.log('[NoteNest AI Tutor] get_folders.php response:', res);
         if (res.success) {
             let html = '<option value="0">📁 Select Folder...</option>';
+            if (res.folders.length === 0) {
+                html += '<option value="0" disabled>No folders found</option>';
+            }
             res.folders.forEach(f => {
                 html += `<option value="${f.id}">${escHtml(f.name)}</option>`;
             });
-            $('#folderSelect').html(html).prop('disabled', false);
-            
-            // Auto-select linked folder if available
+            $('#folderSelect').html(html).prop('disabled', res.folders.length === 0);
+            // Auto-select the linked folder if available
             if (res.target_folder_id > 0) {
                 $('#folderSelect').val(res.target_folder_id);
+                console.log('[NoteNest AI Tutor] Auto-selected folder_id:', res.target_folder_id);
             }
+        } else {
+            console.error('[NoteNest AI Tutor] get_folders.php failed:', res);
+            $('#folderSelect').html('<option value="0">📁 Select Folder...</option>').prop('disabled', true);
         }
+        // Step 3: Load files for this topic
         loadFiles();
-    }, 'json');
+    }, 'json').fail(function(xhr) {
+        console.error('[NoteNest AI Tutor] get_folders.php AJAX error:', xhr.status, xhr.responseText);
+        loadFiles();
+    });
 });
 
 $('#folderSelect').on('change', function() {
+    console.log('[NoteNest AI Tutor] Folder changed → folder_id:', $(this).val());
     loadFiles();
 });
 
 function loadFiles() {
-    const courseId = $('#courseSelect').val();
-    const topicId = $('#topicSelect').val() || 0;
-    const folderId = $('#folderSelect').val() || 0;
+    const courseId = $('#courseSelect').val()  || 0;
+    const topicId  = $('#topicSelect').val()   || 0;
+    const folderId = $('#folderSelect').val()  || 0;
 
-    $.post('ai_tutor.php', {
-        action: 'get_files',
+    if (courseId == 0) {
+        $('#fileListContainer').hide().empty();
+        $('#noFilesMsg').html('Please select a course to list documents.').show();
+        updateFileCount();
+        return;
+    }
+
+    console.log('[NoteNest AI Tutor] loadFiles → course_id:', courseId, 'topic_id:', topicId, 'folder_id:', folderId);
+    $('#noFilesMsg').html('<i class="fas fa-spinner fa-spin me-1"></i> Loading files...').show();
+    $('#fileListContainer').hide().empty();
+
+    $.get('get_files.php', {
         course_id: courseId,
-        topic_id: topicId,
+        topic_id:  topicId,
         folder_id: folderId
     }, function(res) {
+        console.log('[NoteNest AI Tutor] get_files.php response:', res);
         if (res.success) {
             $('#fileListContainer').empty();
             if (res.files.length > 0) {
@@ -1018,14 +1108,22 @@ function loadFiles() {
                 $('#noFilesMsg').hide();
                 $('#selectAllFiles').prop('disabled', false).prop('checked', true);
                 $('.file-chk').prop('checked', true);
+                console.log('[NoteNest AI Tutor] Loaded', res.files.length, 'files:', res.files.map(f => f.name));
             } else {
                 $('#fileListContainer').hide();
                 $('#noFilesMsg').html('No files found for this criteria.').show();
                 $('#selectAllFiles').prop('disabled', true).prop('checked', false);
+                console.log('[NoteNest AI Tutor] No files found for current selection');
             }
             updateFileCount();
+        } else {
+            console.error('[NoteNest AI Tutor] get_files.php failed:', res);
+            $('#noFilesMsg').html('Error loading files. Please try again.').show();
         }
-    }, 'json');
+    }, 'json').fail(function(xhr) {
+        console.error('[NoteNest AI Tutor] get_files.php AJAX error:', xhr.status, xhr.responseText);
+        $('#noFilesMsg').html('Error loading files. Please try again.').show();
+    });
 }
 
 // Check/Uncheck all files
@@ -1053,9 +1151,9 @@ function sendMessage() {
     const msg = $('#chatInput').val().trim();
     if (!msg || isLoading) return;
 
-    const courseId = $('#courseSelect').val();
-    const topicId = $('#topicSelect').val() || 0;
-    const folderId = $('#folderSelect').val() || 0;
+    const courseId  = $('#courseSelect').val()  || 0;
+    const topicId   = $('#topicSelect').val()   || 0;
+    const folderId  = $('#folderSelect').val()  || 0;
     const selectAll = $('#selectAllFiles').is(':checked') ? 1 : 0;
 
     // Get checked file IDs
@@ -1063,6 +1161,15 @@ function sendMessage() {
     $('.file-chk:checked').each(function() {
         fileIds.push($(this).val());
     });
+
+    console.log('[NoteNest AI Tutor] sendMessage →',
+        'course_id:', courseId,
+        'topic_id:', topicId,
+        'folder_id:', folderId,
+        'select_all:', selectAll,
+        'file_ids:', fileIds,
+        'message:', msg.substring(0, 80)
+    );
 
     // Validation: Require file selection or Select All
     if (courseId == 0) {
@@ -1085,31 +1192,53 @@ function sendMessage() {
     showTyping();
     setLoading(true);
 
-    $.post('ai_tutor.php', {
-        action:     'send_message',
+    // Build POST data — pass file_ids as array
+    const postData = {
         message:    msg,
         session_id: currentSession,
         course_id:  courseId,
         topic_id:   topicId,
         folder_id:  folderId,
-        select_all: selectAll,
-        file_ids:   fileIds
-    }, function(res) {
-        hideTyping();
-        setLoading(false);
+        select_all: selectAll
+    };
+    // Append each file_id as file_ids[]
+    fileIds.forEach(function(fId) {
+        postData['file_ids[]'] = fId;
+    });
+    // jQuery $.post doesn't support duplicate keys, use $.ajax instead
+    const formData = new FormData();
+    Object.keys(postData).forEach(k => {
+        if (k !== 'file_ids[]') formData.append(k, postData[k]);
+    });
+    fileIds.forEach(fId => formData.append('file_ids[]', fId));
 
-        if (res.success) {
-            appendBubble('ai', res.reply);
-            totalTokens += (res.tokens || 0);
-            $('#tokenBadge').html(`<i class="fas fa-bolt"></i> ${totalTokens.toLocaleString()} tokens`);
-            loadSessions(); // refresh sidebar
-        } else {
-            appendBubble('ai', '⚠️ **Error:** ' + (res.error || 'Something went wrong. Please try again.'));
+    $.ajax({
+        url: 'generate_answer.php',
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        dataType: 'json',
+        success: function(res) {
+            hideTyping();
+            setLoading(false);
+            console.log('[NoteNest AI Tutor] generate_answer.php response:', res);
+            if (res.success) {
+                appendBubble('ai', res.reply);
+                totalTokens += (res.tokens || 0);
+                $('#tokenBadge').html(`<i class="fas fa-bolt"></i> ${totalTokens.toLocaleString()} tokens`);
+                loadSessions();
+            } else {
+                console.error('[NoteNest AI Tutor] AI error:', res.error);
+                appendBubble('ai', '⚠️ **Error:** ' + (res.error || 'Something went wrong. Please try again.'));
+            }
+        },
+        error: function(xhr, status, err) {
+            hideTyping();
+            setLoading(false);
+            console.error('[NoteNest AI Tutor] generate_answer.php AJAX error:', xhr.status, xhr.responseText);
+            appendBubble('ai', '⚠️ **Network error.** Please check your connection and try again.');
         }
-    }, 'json').fail(function() {
-        hideTyping();
-        setLoading(false);
-        appendBubble('ai', '⚠️ **Network error.** Please check your connection and try again.');
     });
 }
 

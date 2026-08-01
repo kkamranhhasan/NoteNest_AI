@@ -6,6 +6,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 ?>
 <link rel="stylesheet" href="css/navbar.css">
+<?php $current_page = basename($_SERVER['PHP_SELF']); ?>
 <style>
 .nav-ai-link {
     font-size: 1rem;
@@ -13,12 +14,26 @@ if (!isset($_SESSION['user_id'])) {
     color: #197f8f !important;
     font-weight: 600;
     transition: background .2s, color .2s;
+    padding: 6px 10px;
+    border-radius: 8px;
+    text-decoration: none;
 }
 .nav-ai-link:hover {
     background: #e8f6f8;
     color: #0b4954 !important;
     text-decoration: none;
     border-radius: 8px;
+}
+.nav-ai-link.nav-active {
+    background: #e8f6f8;
+    border-radius: 8px;
+}
+.nav-gc-link {
+    color: #4285f4 !important;
+}
+.nav-gc-link:hover, .nav-gc-link.nav-active {
+    background: #e8f0fe !important;
+    color: #1a73e8 !important;
 }
 </style>
 <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
@@ -35,22 +50,25 @@ if (!isset($_SESSION['user_id'])) {
             </a>
             <div id="notifDropdown" class="dropdown-menu dropdown-menu-end p-2" style="min-width:300px;max-width:350px;display:none;"></div>
         </div>
-        <a class="btn btn-link nav-ai-link" href="study_recommendations.php" title="Study Plan" style="color:#e67e22 !important;">
+        <a class="btn btn-link nav-ai-link<?php echo ($current_page === 'study_recommendations.php') ? ' nav-active' : ''; ?>" href="study_recommendations.php" title="Study Plan" style="color:#e67e22 !important;">
             <i class="fas fa-lightbulb"></i> Study Plan
         </a>
-        <a class="btn btn-link nav-ai-link" href="course_management.php" title="Courses">
+        <a class="btn btn-link nav-ai-link<?php echo ($current_page === 'course_management.php') ? ' nav-active' : ''; ?>" href="course_management.php" title="Courses">
             <i class="fas fa-graduation-cap"></i> Courses
         </a>
-        <a class="btn btn-link nav-ai-link" href="ai_tutor.php" title="AI Tutor">
+        <a class="btn btn-link nav-ai-link nav-gc-link<?php echo ($current_page === 'google_classroom.php') ? ' nav-active' : ''; ?>" href="google_classroom.php" title="Google Classroom">
+            <i class="fas fa-chalkboard"></i> Classroom
+        </a>
+        <a class="btn btn-link nav-ai-link<?php echo ($current_page === 'ai_tutor.php') ? ' nav-active' : ''; ?>" href="ai_tutor.php" title="AI Tutor">
             <i class="fas fa-robot"></i> AI Tutor
         </a>
-        <a class="btn btn-link nav-ai-link" href="ai_exam.php" title="AI Exam">
+        <a class="btn btn-link nav-ai-link<?php echo ($current_page === 'ai_exam.php') ? ' nav-active' : ''; ?>" href="ai_exam.php" title="AI Exam">
             <i class="fas fa-brain"></i> AI Exam
         </a>
-        <a class="btn btn-link nav-ai-link" href="lecture_recorder.php" title="Recorder">
+        <a class="btn btn-link nav-ai-link<?php echo ($current_page === 'lecture_recorder.php') ? ' nav-active' : ''; ?>" href="lecture_recorder.php" title="Recorder">
             <i class="fas fa-microphone"></i> Recorder
         </a>
-        <a class="btn btn-link nav-ai-link" href="progress_analytics.php" title="Analytics" style="color:#8e44ad !important;">
+        <a class="btn btn-link nav-ai-link<?php echo ($current_page === 'progress_analytics.php') ? ' nav-active' : ''; ?>" href="progress_analytics.php" title="Analytics" style="color:#8e44ad !important;">
             <i class="fas fa-chart-line"></i> Analytics
         </a>
         <div class="d-flex align-items-center ms-3">

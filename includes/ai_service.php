@@ -6,7 +6,7 @@
 // ============================================================
 
 /**
- * Core cURL function to call xAI Grok chat completions endpoint.
+ * Core cURL function to call Groq chat completions endpoint.
  *
  * @param  array  $messages     OpenAI-style messages [['role'=>'user|assistant|system','content'=>'...']]
  * @param  string $model        GROK_MODEL | GROK_MODEL_PRO
@@ -62,8 +62,8 @@ function grokRequest(array $messages, string $model = '', float $temperature = 0
 }
 
 /**
- * Backward-compatible wrapper: accepts old Gemini-style message format
- * (['role'=>'user|model', 'text'=>'...']) and converts to OpenAI format.
+ * Backward-compatible wrapper: accepts legacy message format
+ * (['role'=>'user|model', 'text'=>'...']) and converts to Groq/OpenAI format.
  * Used by pages that call geminiRequest() directly.
  */
 function geminiRequest(array $messages, string $systemPrompt = '', float $temperature = 0.7): array {
@@ -74,7 +74,7 @@ function geminiRequest(array $messages, string $systemPrompt = '', float $temper
         $openAiMessages[] = ['role' => 'system', 'content' => $systemPrompt];
     }
 
-    // Convert Gemini-style role names to OpenAI style
+    // Convert legacy role names to OpenAI/Groq style
     foreach ($messages as $msg) {
         $role    = ($msg['role'] === 'model') ? 'assistant' : ($msg['role'] ?? 'user');
         $content = $msg['text'] ?? $msg['content'] ?? '';
@@ -99,7 +99,7 @@ function geminiRequest(array $messages, string $systemPrompt = '', float $temper
  * @return array  ['success', 'text', 'tokens', 'error']
  */
 function aiChat(string $userMessage, array $history = [], string $courseContext = ''): array {
-    $systemContent = "You are an expert academic tutor assistant for university students powered by Grok AI.
+    $systemContent = "You are an expert academic tutor assistant for university students powered by Groq AI (Llama 3.3).
 Your role is to:
 - Explain concepts clearly with examples
 - Break down complex topics step by step
@@ -751,3 +751,29 @@ function tokenize_text(string $text): array {
     $text = preg_replace('/[^\w\s]/u', ' ', $text);
     return preg_split('/\s+/u', $text, -1, PREG_SPLIT_NO_EMPTY);
 }
+
+/**
+ * Auto-indexes all files belonging to a user that are not yet indexed in document_chunks.
+ */
+function index_all_unindexed_user_files(mysqli $conn, int $userId): void {
+    $stmt = $conn->prepare("
+        SELECT f.id FROM files f
+        LEFT JOIN document_chunks dc ON f.id = dc.file_id
+        WHERE f.owner_id = ? AND dc.id IS NULL
+        LIMIT 10
+    ");
+    if (!$stmt) return;
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $unindexedIds = [];
+    while ($row = $res->fetch_assoc()) {
+        $unindexedIds[] = (int)$row['id'];
+    }
+    $stmt->close();
+
+    foreach ($unindexedIds as $fId) {
+        index_file_content($conn, $fId);
+    }
+}
+
