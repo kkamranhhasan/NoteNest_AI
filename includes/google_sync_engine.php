@@ -31,7 +31,19 @@ function gc_run_sync(mysqli $conn, int $userId, string $syncType = 'manual'): ar
     // 2. Update status to syncing
     gc_update_sync_status($conn, $userId, 'syncing');
 
-    // 3. Get valid access token (auto-refreshes if needed)
+    // 3. Get current google_account_id (id from google_accounts table)
+    $accountRow = gc_get_account($conn, $userId);
+    if (!$accountRow) {
+        $err = 'No connected Google account found.';
+        gc_update_sync_status($conn, $userId, 'error', $err);
+        gc_finish_sync_log($conn, $logId, 'failed', $stats, $startTime, $err);
+        return ['success' => false, 'error' => $err, 'stats' => $stats];
+    }
+    $googleAccountId = (int)$accountRow['id'];
+    $connectedEmail  = $accountRow['google_email'];
+    error_log("[GC] Sync started | user_id: {$userId} | google_account_id: {$googleAccountId} | email: {$connectedEmail}");
+
+    // 4. Get valid access token (auto-refreshes if needed)
     $accessToken = gc_get_valid_token($conn, $userId);
     if (!$accessToken) {
         $err = 'Failed to obtain valid access token. Please reconnect your Google account.';
@@ -41,32 +53,34 @@ function gc_run_sync(mysqli $conn, int $userId, string $syncType = 'manual'): ar
     }
 
     try {
-        // 4. Sync Courses & repair mappings
-        $courseResult = gc_sync_courses($conn, $userId, $accessToken);
+        // 5. Sync Courses & repair mappings
+        $courseResult = gc_sync_courses($conn, $userId, $accessToken, $googleAccountId);
         $stats['courses'] = $courseResult['synced'];
         $stats['errors'] += $courseResult['errors'];
         if (!empty($courseResult['error_details'])) {
             $stats['error_details'] = array_merge($stats['error_details'], $courseResult['error_details']);
         }
 
-        // Ensure courses & folders are linked properly (MUST run before material sync)
-        gc_repair_and_link_courses($conn, $userId);
+        error_log("[GC] Synced course ids: " . implode(', ', $courseResult['synced_ids'] ?? []));
 
-        // 5. Sync Topics & Folders for each course
-        $gcCourses = gc_get_synced_courses($conn, $userId);
+        // Ensure courses & folders are linked properly (MUST run before material sync)
+        gc_repair_and_link_courses($conn, $userId, $googleAccountId);
+
+        // 6. Sync Topics & Folders for each course
+        $gcCourses = gc_get_synced_courses($conn, $userId, $googleAccountId);
         foreach ($gcCourses as $gc) {
             // Topics
-            $topicResult = gc_sync_topics($conn, $userId, $accessToken, $gc);
+            $topicResult = gc_sync_topics($conn, $userId, $accessToken, $gc, $googleAccountId);
             $stats['topics'] += $topicResult['synced'];
             $stats['errors'] += $topicResult['errors'];
 
             // Materials (course work materials + coursework attachments)
-            $matResult = gc_sync_materials($conn, $userId, $accessToken, $gc);
+            $matResult = gc_sync_materials($conn, $userId, $accessToken, $gc, $googleAccountId);
             $stats['files'] += $matResult['synced'];
             $stats['errors'] += $matResult['errors'];
 
             // Assignments → Todos + Calendar
-            $asgResult = gc_sync_assignments($conn, $userId, $accessToken, $gc);
+            $asgResult = gc_sync_assignments($conn, $userId, $accessToken, $gc, $googleAccountId);
             $stats['assignments'] += $asgResult['synced'];
             $stats['errors'] += $asgResult['errors'];
 
@@ -78,31 +92,32 @@ function gc_run_sync(mysqli $conn, int $userId, string $syncType = 'manual'): ar
             }
         }
 
-        // 6. Generate reminders for new assignments
+        // 7. Generate reminders for new assignments
         if (file_exists(__DIR__ . '/google_reminder_engine.php')) {
             require_once __DIR__ . '/google_reminder_engine.php';
             gc_generate_reminders($conn, $userId);
         }
 
-        // 7. Trigger AI analysis for new assignments (if time permits)
+        // 8. Trigger AI analysis for new assignments (if time permits)
         if (file_exists(__DIR__ . '/google_ai_analyzer.php') && (microtime(true) - $startTime) < 15) {
             require_once __DIR__ . '/google_ai_analyzer.php';
             @gc_analyze_new_assignments($conn, $userId);
         }
 
-        // 8. Generate sync completion notification
+        // 9. Generate sync completion notification
         $msg = "✅ Google Classroom sync completed: {$stats['courses']} courses, {$stats['topics']} topics, {$stats['files']} files, {$stats['assignments']} assignments synced.";
         gc_create_notification($conn, $userId, $msg);
 
-        // 9. Log progress event
+        // 10. Log progress event
         if (function_exists('logProgress')) {
             logProgress($conn, $userId, 'file_upload', 'Google Classroom sync: ' . $stats['files'] . ' files synced');
         }
 
-        // 10. Update status
+        // 11. Update status
         gc_update_sync_status($conn, $userId, 'idle');
         gc_finish_sync_log($conn, $logId, 'completed', $stats, $startTime);
 
+        error_log("[GC] Sync completed | user_id: {$userId} | google_account_id: {$googleAccountId} | courses: {$stats['courses']} | files: {$stats['files']}");
         return ['success' => true, 'stats' => $stats];
 
     } catch (\Throwable $e) {
@@ -116,8 +131,8 @@ function gc_run_sync(mysqli $conn, int $userId, string $syncType = 'manual'): ar
 
 // ── COURSE SYNC ──────────────────────────────────────────────
 
-function gc_sync_courses(mysqli $conn, int $userId, string $accessToken): array {
-    $result = ['synced' => 0, 'errors' => 0, 'error_details' => []];
+function gc_sync_courses(mysqli $conn, int $userId, string $accessToken, int $googleAccountId): array {
+    $result = ['synced' => 0, 'errors' => 0, 'error_details' => [], 'synced_ids' => []];
 
     $apiData = gc_fetch_courses($accessToken);
     if (isset($apiData['error'])) {
@@ -136,9 +151,9 @@ function gc_sync_courses(mysqli $conn, int $userId, string $accessToken): array 
             $courseCode      = $course['enrollmentCode'] ?? strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $courseName), 0, 8));
             $courseState     = $course['courseState'] ?? 'ACTIVE';
 
-            // Check if already synced
-            $chk = $conn->prepare("SELECT id, course_id FROM google_courses WHERE user_id = ? AND google_course_id = ?");
-            $chk->bind_param('is', $userId, $googleCourseId);
+            // Check if already synced for THIS google_account_id
+            $chk = $conn->prepare("SELECT id, course_id FROM google_courses WHERE user_id = ? AND google_course_id = ? AND google_account_id = ?");
+            $chk->bind_param('isi', $userId, $googleCourseId, $googleAccountId);
             $chk->execute();
             $chk->bind_result($gcId, $existingCourseId);
             $exists = $chk->fetch();
@@ -151,6 +166,7 @@ function gc_sync_courses(mysqli $conn, int $userId, string $accessToken): array 
                 $upd->execute();
                 $upd->close();
                 $result['synced']++;
+                $result['synced_ids'][] = $googleCourseId;
                 continue;
             }
 
@@ -212,23 +228,24 @@ function gc_sync_courses(mysqli $conn, int $userId, string $accessToken): array 
                 $rfq->close();
             }
 
-            // Insert/update google_courses mapping
+            // Insert/update google_courses mapping — always include google_account_id
             if ($exists) {
-                $upd = $conn->prepare("UPDATE google_courses SET course_id=?, root_folder_id=?, course_name=?, section=?, description=?, course_code=?, course_state=?, last_synced_at=NOW() WHERE id=?");
-                $upd->bind_param('iisssssi', $nnCourseId, $rootFolderId, $courseName, $section, $description, $courseCode, $courseState, $gcId);
+                $upd = $conn->prepare("UPDATE google_courses SET course_id=?, root_folder_id=?, course_name=?, section=?, description=?, course_code=?, course_state=?, google_account_id=?, last_synced_at=NOW() WHERE id=?");
+                $upd->bind_param('iisssssii', $nnCourseId, $rootFolderId, $courseName, $section, $description, $courseCode, $courseState, $googleAccountId, $gcId);
                 $upd->execute();
                 $upd->close();
             } else {
                 $ins = $conn->prepare(
-                    "INSERT INTO google_courses (user_id, google_course_id, course_id, root_folder_id, course_name, section, description, course_code, course_state, last_synced_at)
-                     VALUES (?,?,?,?,?,?,?,?,?,NOW())"
+                    "INSERT INTO google_courses (user_id, google_account_id, google_course_id, course_id, root_folder_id, course_name, section, description, course_code, course_state, last_synced_at)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,NOW())"
                 );
-                $ins->bind_param('isiisssss', $userId, $googleCourseId, $nnCourseId, $rootFolderId, $courseName, $section, $description, $courseCode, $courseState);
+                $ins->bind_param('iisisssssss', $userId, $googleAccountId, $googleCourseId, $nnCourseId, $rootFolderId, $courseName, $section, $description, $courseCode, $courseState);
                 $ins->execute();
                 $ins->close();
             }
 
             $result['synced']++;
+            $result['synced_ids'][] = $googleCourseId;
         } catch (\Throwable $e) {
             $result['errors']++;
             $result['error_details'][] = 'Course sync: ' . $e->getMessage();
@@ -241,7 +258,7 @@ function gc_sync_courses(mysqli $conn, int $userId, string $accessToken): array 
 
 // ── TOPIC SYNC ───────────────────────────────────────────────
 
-function gc_sync_topics(mysqli $conn, int $userId, string $accessToken, array $gc): array {
+function gc_sync_topics(mysqli $conn, int $userId, string $accessToken, array $gc, int $googleAccountId): array {
     $result = ['synced' => 0, 'errors' => 0, 'error_details' => []];
 
     // Ensure root course folder and course_id exist before syncing topics
@@ -368,15 +385,15 @@ function gc_sync_topics(mysqli $conn, int $userId, string $accessToken, array $g
                 }
             }
 
-            // Save/Update google_topics mapping
+            // Save/Update google_topics mapping — always include google_account_id
             if ($exists && $gtId) {
-                $gtUpd = $conn->prepare("UPDATE google_topics SET topic_id = ?, folder_id = ?, topic_name = ?, sort_order = ? WHERE id = ?");
-                $gtUpd->bind_param('iisii', $topicId, $folderId, $topicName, $sortOrder, $gtId);
+                $gtUpd = $conn->prepare("UPDATE google_topics SET topic_id = ?, folder_id = ?, topic_name = ?, sort_order = ?, google_account_id = ? WHERE id = ?");
+                $gtUpd->bind_param('iisiii', $topicId, $folderId, $topicName, $sortOrder, $googleAccountId, $gtId);
                 $gtUpd->execute();
                 $gtUpd->close();
             } else {
-                $ins = $conn->prepare("INSERT INTO google_topics (user_id, google_course_id, google_topic_id, topic_id, folder_id, topic_name, sort_order) VALUES (?,?,?,?,?,?,?)");
-                $ins->bind_param('issiisi', $userId, $gc['google_course_id'], $googleTopicId, $topicId, $folderId, $topicName, $sortOrder);
+                $ins = $conn->prepare("INSERT INTO google_topics (user_id, google_account_id, google_course_id, google_topic_id, topic_id, folder_id, topic_name, sort_order) VALUES (?,?,?,?,?,?,?,?)");
+                $ins->bind_param('iissiiis', $userId, $googleAccountId, $gc['google_course_id'], $googleTopicId, $topicId, $folderId, $topicName, $sortOrder);
                 $ins->execute();
                 $ins->close();
             }
@@ -394,7 +411,7 @@ function gc_sync_topics(mysqli $conn, int $userId, string $accessToken, array $g
 
 // ── MATERIAL SYNC (files download) ──────────────────────────
 
-function gc_sync_materials(mysqli $conn, int $userId, string $accessToken, array $gc): array {
+function gc_sync_materials(mysqli $conn, int $userId, string $accessToken, array $gc, int $googleAccountId): array {
     $result = ['synced' => 0, 'errors' => 0, 'error_details' => []];
 
     // ── CRITICAL: Ensure root folder exists before any downloads ──
@@ -657,15 +674,15 @@ function gc_sync_materials(mysqli $conn, int $userId, string $accessToken, array
                 }
             }
 
-            // Record in google_files
+            // Record in google_files — always include google_account_id
             $fileType     = pathinfo($title, PATHINFO_EXTENSION) ?: 'unknown';
             $materialId   = $item['sourceId'];
             $errorMsgSafe = $errorMsg ?? '';
 
-            $gfSql = "INSERT INTO google_files (user_id, google_course_id, google_file_id, google_material_id, file_id, folder_id, course_id, topic_id, file_title, file_type, mime_type, file_url, download_status, error_message) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+            $gfSql = "INSERT INTO google_files (user_id, google_account_id, google_course_id, google_file_id, google_material_id, file_id, folder_id, course_id, topic_id, file_title, file_type, mime_type, file_url, download_status, error_message) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
             $gfIns = $conn->prepare($gfSql);
-            $gfIns->bind_param('isssiiiissssss',
-                $userId, $gc['google_course_id'], $fileId, $materialId,
+            $gfIns->bind_param('iisssiiiissssss',
+                $userId, $googleAccountId, $gc['google_course_id'], $fileId, $materialId,
                 $nnFileId, $targetFolderId, $courseIdInt, $nnTopicId,
                 $title, $fileType, $mimeType, $fileUrl,
                 $downloadStatus, $errorMsgSafe
@@ -786,7 +803,7 @@ function gc_ensure_course_folder(mysqli $conn, int $userId, array $gc): array {
 
 // ── ASSIGNMENT SYNC ──────────────────────────────────────────
 
-function gc_sync_assignments(mysqli $conn, int $userId, string $accessToken, array $gc): array {
+function gc_sync_assignments(mysqli $conn, int $userId, string $accessToken, array $gc, int $googleAccountId): array {
     $result = ['synced' => 0, 'errors' => 0, 'error_details' => []];
 
     $apiData = gc_fetch_coursework($accessToken, $gc['google_course_id']);
@@ -874,18 +891,18 @@ function gc_sync_assignments(mysqli $conn, int $userId, string $accessToken, arr
                 $cIns->close();
             }
 
-            // Insert google_assignments mapping
+            // Insert google_assignments mapping — always include google_account_id
             $todoIdSafe     = $todoId          ? (int)$todoId          : 0;
             $calEvtIdSafe   = $calendarEventId ? (int)$calendarEventId : 0;
             $dueDateSafe    = $dueDate ?? '';
             $dueTimeSafe    = $dueTime ?? '';
 
             $ins = $conn->prepare(
-                "INSERT INTO google_assignments (user_id, google_course_id, google_coursework_id, todo_id, calendar_event_id, course_id, title, description, due_date, due_time, max_points, work_type, state)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                "INSERT INTO google_assignments (user_id, google_account_id, google_course_id, google_coursework_id, todo_id, calendar_event_id, course_id, title, description, due_date, due_time, max_points, work_type, state)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             );
-            $ins->bind_param('issiiissssdss',
-                $userId, $gc['google_course_id'], $cwId, $todoIdSafe, $calEvtIdSafe, $courseIdInt,
+            $ins->bind_param('iissiiissssdss',
+                $userId, $googleAccountId, $gc['google_course_id'], $cwId, $todoIdSafe, $calEvtIdSafe, $courseIdInt,
                 $title, $description, $dueDateSafe, $dueTimeSafe, $maxPoints, $workType, $state
             );
             $ins->execute();
@@ -907,9 +924,15 @@ function gc_sync_assignments(mysqli $conn, int $userId, string $accessToken, arr
 
 // ── HELPER FUNCTIONS ─────────────────────────────────────────
 
-function gc_get_synced_courses(mysqli $conn, int $userId): array {
-    $stmt = $conn->prepare("SELECT id, google_course_id, course_id, root_folder_id, course_name FROM google_courses WHERE user_id = ?");
-    $stmt->bind_param('i', $userId);
+function gc_get_synced_courses(mysqli $conn, int $userId, int $googleAccountId = 0): array {
+    if ($googleAccountId > 0) {
+        $stmt = $conn->prepare("SELECT id, google_course_id, course_id, root_folder_id, course_name FROM google_courses WHERE user_id = ? AND google_account_id = ?");
+        $stmt->bind_param('ii', $userId, $googleAccountId);
+    } else {
+        // Fallback: no account id filter (legacy)
+        $stmt = $conn->prepare("SELECT id, google_course_id, course_id, root_folder_id, course_name FROM google_courses WHERE user_id = ?");
+        $stmt->bind_param('i', $userId);
+    }
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
@@ -954,7 +977,7 @@ function gc_finish_sync_log(mysqli $conn, int $logId, string $status, array $sta
 /**
  * Get sync statistics for dashboard display.
  */
-function gc_get_sync_stats(mysqli $conn, int $userId): array {
+function gc_get_sync_stats(mysqli $conn, int $userId, int $googleAccountId = 0): array {
     $stats = [
         'total_courses'     => 0,
         'total_topics'      => 0,
@@ -964,53 +987,25 @@ function gc_get_sync_stats(mysqli $conn, int $userId): array {
         'downloaded_files'  => 0,
     ];
 
-    $stmt = $conn->prepare("SELECT COUNT(*) FROM google_courses WHERE user_id = ?");
-    $stmt->bind_param('i', $userId);
-    $stmt->execute();
-    $stmt->bind_result($count);
-    $stmt->fetch();
-    $stats['total_courses'] = (int)$count;
-    $stmt->close();
+    $accountFilter = ($googleAccountId > 0) ? " AND google_account_id = {$googleAccountId}" : '';
 
-    $stmt = $conn->prepare("SELECT COUNT(*) FROM google_topics WHERE user_id = ?");
-    $stmt->bind_param('i', $userId);
-    $stmt->execute();
-    $stmt->bind_result($count);
-    $stmt->fetch();
-    $stats['total_topics'] = (int)$count;
-    $stmt->close();
+    $r = $conn->query("SELECT COUNT(*) FROM google_courses WHERE user_id = {$userId}{$accountFilter}");
+    $stats['total_courses'] = (int)$r->fetch_row()[0];
 
-    $stmt = $conn->prepare("SELECT COUNT(*) FROM google_files WHERE user_id = ?");
-    $stmt->bind_param('i', $userId);
-    $stmt->execute();
-    $stmt->bind_result($count);
-    $stmt->fetch();
-    $stats['total_files'] = (int)$count;
-    $stmt->close();
+    $r = $conn->query("SELECT COUNT(*) FROM google_topics WHERE user_id = {$userId}{$accountFilter}");
+    $stats['total_topics'] = (int)$r->fetch_row()[0];
 
-    $stmt = $conn->prepare("SELECT COUNT(*) FROM google_files WHERE user_id = ? AND download_status = 'downloaded'");
-    $stmt->bind_param('i', $userId);
-    $stmt->execute();
-    $stmt->bind_result($count);
-    $stmt->fetch();
-    $stats['downloaded_files'] = (int)$count;
-    $stmt->close();
+    $r = $conn->query("SELECT COUNT(*) FROM google_files WHERE user_id = {$userId}{$accountFilter}");
+    $stats['total_files'] = (int)$r->fetch_row()[0];
 
-    $stmt = $conn->prepare("SELECT COUNT(*) FROM google_assignments WHERE user_id = ?");
-    $stmt->bind_param('i', $userId);
-    $stmt->execute();
-    $stmt->bind_result($count);
-    $stmt->fetch();
-    $stats['total_assignments'] = (int)$count;
-    $stmt->close();
+    $r = $conn->query("SELECT COUNT(*) FROM google_files WHERE user_id = {$userId} AND download_status = 'downloaded'{$accountFilter}");
+    $stats['downloaded_files'] = (int)$r->fetch_row()[0];
 
-    $stmt = $conn->prepare("SELECT COUNT(*) FROM google_assignments ga JOIN todos t ON ga.todo_id = t.id WHERE ga.user_id = ? AND t.status = 'pending' AND ga.due_date >= CURDATE()");
-    $stmt->bind_param('i', $userId);
-    $stmt->execute();
-    $stmt->bind_result($count);
-    $stmt->fetch();
-    $stats['pending_assignments'] = (int)$count;
-    $stmt->close();
+    $r = $conn->query("SELECT COUNT(*) FROM google_assignments WHERE user_id = {$userId}{$accountFilter}");
+    $stats['total_assignments'] = (int)$r->fetch_row()[0];
+
+    $r = $conn->query("SELECT COUNT(*) FROM google_assignments ga JOIN todos t ON ga.todo_id = t.id WHERE ga.user_id = {$userId} AND t.status = 'pending' AND ga.due_date >= CURDATE(){$accountFilter}");
+    $stats['pending_assignments'] = (int)$r->fetch_row()[0];
 
     return $stats;
 }
@@ -1019,12 +1014,13 @@ function gc_get_sync_stats(mysqli $conn, int $userId): array {
  * Auto-repair & link google_courses to NoteNest courses and root folders,
  * and attach any orphaned files to course root folders.
  */
-function gc_repair_and_link_courses(mysqli $conn, int $userId): void {
+function gc_repair_and_link_courses(mysqli $conn, int $userId, int $googleAccountId = 0): void {
     try {
         if (function_exists('db_reconnect')) @db_reconnect($conn);
 
         $userId = (int)$userId;
         if ($userId <= 0) return;
+        $accountFilter = ($googleAccountId > 0) ? " AND gc.google_account_id = {$googleAccountId}" : '';
 
         // 1. Create missing courses in `courses` table for synced google_courses
         $conn->query("
@@ -1034,7 +1030,7 @@ function gc_repair_and_link_courses(mysqli $conn, int $userId): void {
                    CONCAT('Synced from Google Classroom: ', gc.course_name), '#4285f4'
             FROM google_courses gc
             LEFT JOIN courses c ON (c.user_id = gc.user_id AND c.name = gc.course_name)
-            WHERE gc.user_id = {$userId} AND c.id IS NULL
+            WHERE gc.user_id = {$userId}{$accountFilter} AND c.id IS NULL
             GROUP BY gc.id
         ");
 
@@ -1043,7 +1039,7 @@ function gc_repair_and_link_courses(mysqli $conn, int $userId): void {
             UPDATE google_courses gc
             JOIN courses c ON (c.user_id = gc.user_id AND c.name = gc.course_name)
             SET gc.course_id = c.id
-            WHERE gc.user_id = {$userId} AND (gc.course_id IS NULL OR gc.course_id = 0)
+            WHERE gc.user_id = {$userId}{$accountFilter} AND (gc.course_id IS NULL OR gc.course_id = 0)
         ");
 
         // 2. Create missing root folders in `folders` table for courses
@@ -1052,7 +1048,7 @@ function gc_repair_and_link_courses(mysqli $conn, int $userId): void {
             SELECT gc.user_id, gc.course_id, 1, gc.course_name, NULL
             FROM google_courses gc
             LEFT JOIN folders f ON (f.owner_id = gc.user_id AND f.course_id = gc.course_id AND f.is_course_root = 1)
-            WHERE gc.user_id = {$userId} AND gc.course_id IS NOT NULL AND f.id IS NULL
+            WHERE gc.user_id = {$userId}{$accountFilter} AND gc.course_id IS NOT NULL AND f.id IS NULL
             GROUP BY gc.id
         ");
 
@@ -1061,7 +1057,7 @@ function gc_repair_and_link_courses(mysqli $conn, int $userId): void {
             UPDATE google_courses gc
             JOIN folders f ON (f.owner_id = gc.user_id AND f.course_id = gc.course_id AND f.is_course_root = 1)
             SET gc.root_folder_id = f.id
-            WHERE gc.user_id = {$userId} AND (gc.root_folder_id IS NULL OR gc.root_folder_id = 0)
+            WHERE gc.user_id = {$userId}{$accountFilter} AND (gc.root_folder_id IS NULL OR gc.root_folder_id = 0)
         ");
 
         // 3. Repair missing course_topics and topic subfolders for google_topics

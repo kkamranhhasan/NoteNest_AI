@@ -26,27 +26,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
     $action = $_POST['action'];
 
-    // ── SEND MESSAGE (RAG SYSTEM) ──────────────────────────────
+    // ── SEND MESSAGE (Direct text extraction) ──────────────────
     if ($action === 'send_message') {
         $message    = trim($_POST['message']   ?? '');
         $session_id = trim($_POST['session_id'] ?? '');
         $course_id  = (int)($_POST['course_id'] ?? 0);
         $folder_id  = (int)($_POST['folder_id'] ?? 0);
         $topic_id   = (int)($_POST['topic_id'] ?? 0);
-        $file_ids   = isset($_POST['file_ids']) ? array_map('intval', $_POST['file_ids']) : [];
+        $file_ids   = isset($_POST['file_ids']) ? array_values(array_filter(array_map('intval', (array)$_POST['file_ids']))) : [];
         $select_all = isset($_POST['select_all']) && $_POST['select_all'] == 1;
+
+        error_log("[ai_tutor send_message] message=" . substr($message, 0, 100));
+        error_log("[ai_tutor send_message] session_id=$session_id, course_id=$course_id, select_all=" . ($select_all ? '1' : '0'));
+        error_log("[ai_tutor send_message] selected_file_ids=" . json_encode($file_ids));
 
         if (!$message || !$session_id) {
             echo json_encode(['success' => false, 'error' => 'Message and session ID required.']);
             exit;
         }
 
-        // Enforce File Selection: user must select files or check Select All
-        $search_files = null;
-        if (!$select_all && !empty($file_ids)) {
-            $search_files = $file_ids;
-        } elseif (!$select_all && empty($file_ids)) {
-            // Strict Security Rule: if no files are selected, return exact mismatch response
+        if (!$select_all && empty($file_ids)) {
+            error_log("[ai_tutor send_message] No files selected — returning fallback");
             echo json_encode([
                 'success' => true,
                 'reply'   => "I couldn't find this information in the selected study materials.",
@@ -55,123 +55,146 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
 
-        // Retrieve top 5 matching chunks from database (ownership strictly validated inside search_document_chunks)
-        $chunks = search_document_chunks(
-            $conn, 
-            $user_id, 
-            $message, 
-            $course_id ?: null, 
-            $folder_id ?: null, 
-            $topic_id ?: null, 
-            $search_files, 
-            5
-        );
+        // Fetch file rows (validated ownership)
+        $file_rows = [];
+        if ($select_all) {
+            if ($folder_id > 0) {
+                $fs = $conn->prepare("SELECT id, name, file_path, mime_type FROM files WHERE owner_id=? AND folder_id=? LIMIT 5");
+                $fs->bind_param('ii', $user_id, $folder_id);
+            } elseif ($course_id > 0) {
+                $fs = $conn->prepare("SELECT f.id, f.name, f.file_path, f.mime_type FROM files f LEFT JOIN file_course_tags fct ON fct.file_id=f.id WHERE f.owner_id=? AND (f.course_id=? OR fct.course_id=?) LIMIT 5");
+                $fs->bind_param('iii', $user_id, $course_id, $course_id);
+            } else {
+                $fs = $conn->prepare("SELECT id, name, file_path, mime_type FROM files WHERE owner_id=? ORDER BY created_at DESC LIMIT 5");
+                $fs->bind_param('i', $user_id);
+            }
+            $fs->execute();
+            $file_rows = $fs->get_result()->fetch_all(MYSQLI_ASSOC);
+            $fs->close();
+        } else {
+            foreach ($file_ids as $fId) {
+                $fs = $conn->prepare("SELECT id, name, file_path, mime_type FROM files WHERE id=? AND owner_id=?");
+                $fs->bind_param('ii', $fId, $user_id);
+                $fs->execute();
+                $row = $fs->get_result()->fetch_assoc();
+                $fs->close();
+                if ($row) $file_rows[] = $row;
+            }
+        }
 
-        if (empty($chunks)) {
-            // No matching chunks, return strict response immediately (no LLM call)
-            echo json_encode([
-                'success' => true,
-                'reply'   => "I couldn't find this information in the selected study materials.",
-                'tokens'  => 0
-            ]);
+        error_log("[ai_tutor send_message] Resolved " . count($file_rows) . " file(s)");
+
+        if (empty($file_rows)) {
+            echo json_encode(['success' => true, 'reply' => "I couldn't find this information in the selected study materials.", 'tokens' => 0]);
             exit;
         }
 
-        // Build context block
+        // Direct text extraction from files on disk
         $context = "";
-        $idx = 1;
-        foreach ($chunks as $c) {
-            $context .= "[Chunk {$idx}]\n";
-            $context .= "Course: " . ($c['course_code'] ?: 'N/A') . " — " . ($c['course_name'] ?: 'N/A') . "\n";
-            $context .= "Folder: " . ($c['folder_name'] ?: 'N/A') . "\n";
-            $context .= "Topic: " . ($c['topic_name'] ?: 'N/A') . "\n";
-            $context .= "File: " . ($c['file_name'] ?: 'N/A') . "\n";
-            $context .= "Page: " . ($c['page_number'] ?: '1') . "\n";
-            $context .= "Confidence: " . ($c['confidence_score'] ?: '100') . "%\n";
-            $context .= "Content: " . $c['content'] . "\n\n";
-            $idx++;
+        foreach ($file_rows as $fileRow) {
+            $fPath = $fileRow['file_path'];
+            $fMime = $fileRow['mime_type'] ?? '';
+            $ext   = strtolower(pathinfo($fPath, PATHINFO_EXTENSION));
+
+            $fullPath = $fPath;
+            if (!file_exists($fullPath)) $fullPath = __DIR__ . '/' . ltrim($fPath, '/');
+            if (!file_exists($fullPath)) $fullPath = __DIR__ . '/../' . ltrim($fPath, '/');
+
+            error_log("[ai_tutor send_message] Extracting '{$fileRow['name']}' path='$fullPath' ext='$ext'");
+
+            if (!file_exists($fullPath)) {
+                error_log("[ai_tutor send_message] FILE NOT FOUND: $fullPath");
+                continue;
+            }
+
+            $rawText = '';
+            if ($ext === 'pdf' || strpos($fMime, 'pdf') !== false) {
+                $escaped = escapeshellarg($fullPath);
+                $pdfText = @shell_exec("pdftotext $escaped - 2>/dev/null");
+                $rawText = !empty(trim($pdfText)) ? $pdfText : extract_text_from_pdf($fullPath);
+            } elseif ($ext === 'docx' || strpos($fMime, 'wordprocessingml') !== false) {
+                $rawText = extract_text_from_docx($fullPath);
+            } elseif ($ext === 'pptx' || strpos($fMime, 'presentationml') !== false) {
+                $rawText = extract_text_from_pptx($fullPath);
+            } else {
+                $content = @file_get_contents($fullPath);
+                if ($content !== false) $rawText = strip_tags((string)$content);
+            }
+
+            $rawText = mb_convert_encoding($rawText, 'UTF-8', 'UTF-8');
+            $rawText = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', ' ', $rawText);
+            $rawText = preg_replace('/\s+/', ' ', trim($rawText));
+            error_log("[ai_tutor send_message] '{$fileRow['name']}': extracted " . strlen($rawText) . " chars");
+
+            if (empty(trim($rawText))) {
+                error_log("[ai_tutor send_message] ZERO TEXT from '{$fileRow['name']}' — reason: empty or image-based PDF");
+                continue;
+            }
+            $context .= "=== FILE: {$fileRow['name']} ===\n" . mb_substr($rawText, 0, 2000) . "\n\n";
         }
 
-        // Strict system prompt for NoteNest AI
-        $systemPrompt = "You are NoteNest AI Tutor.
-Your knowledge is LIMITED ONLY to the provided context.
-Never answer using your own knowledge.
-Never answer from the internet.
-Never guess.
-Never fabricate.
-Answer ONLY using the retrieved context.
+        if (strlen($context) > 5000) {
+            $context = substr($context, 0, 5000);
+        }
 
-Additional features instructions:
-- AI SUMMARY: If the user requests a summary, summarize ONLY the provided context.
-- FLASHCARDS: If the user requests flashcards, generate them ONLY from the provided context.
-- VIVA: If the user requests a viva/oral exam, generate questions ONE-BY-ONE based ONLY on the provided context.
+        error_log("[ai_tutor send_message] Final context length=" . strlen($context));
 
-If the answer or topic is unavailable in the provided context, reply exactly:
-\"I couldn't find this information in the selected study materials.\"";
+        if (strlen(trim($context)) < 10) {
+            echo json_encode([
+                'success' => true,
+                'reply'   => "I couldn't find this information in the selected study materials.",
+                'tokens'  => 0
+            ]);
+            exit;
+        }
 
-        // Load recent conversation history (last 10 turns)
+        $systemPrompt = "You are NoteNest AI Tutor. Answer the student's question ONLY using the provided study material context.
+RULES:
+- Use ONLY the provided context. Never use outside knowledge.
+- If the answer is not in the context, reply exactly: \"I couldn't find this information in the selected study materials.\"
+- Be clear, helpful, and educational.";
+
         $history = [];
-        $hq = $conn->prepare(
-            "SELECT role, message FROM ai_chat_history
-             WHERE user_id=? AND session_id=?
-             ORDER BY created_at ASC LIMIT 20"
-        );
+        $hq = $conn->prepare("SELECT role, message FROM ai_chat_history WHERE user_id=? AND session_id=? ORDER BY created_at ASC LIMIT 10");
         $hq->bind_param('is', $user_id, $session_id);
         $hq->execute();
         $hres = $hq->get_result();
         while ($row = $hres->fetch_assoc()) {
-            $history[] = [
-                'role' => $row['role'] === 'assistant' ? 'assistant' : 'user',
-                'content' => $row['message']
-            ];
+            $history[] = ['role' => $row['role'] === 'assistant' ? 'assistant' : 'user', 'content' => $row['message']];
         }
         $hq->close();
 
-        // Save user question to DB
         saveAiChat($conn, $user_id, $session_id, 'user', $message, 'tutor', $course_id);
 
-        // Prepare messages for Groq API
         $messages = [['role' => 'system', 'content' => $systemPrompt]];
         foreach ($history as $h) {
             $messages[] = ['role' => $h['role'], 'content' => $h['content']];
         }
-        $fullUserMsg = "STUDENT QUESTION: {$message}\n\nRETRIEVED STUDY MATERIAL CONTEXT:\n{$context}";
+        $fullUserMsg = "STUDY MATERIAL CONTEXT:\n" . $context . "\n\n---\nSTUDENT QUESTION: " . $message;
         $messages[] = ['role' => 'user', 'content' => $fullUserMsg];
 
-        // Call Groq (Low temperature for precise retrieval)
-        $aiResult = grokRequest($messages, GROQ_MODEL, 0.1);
+        error_log("[ai_tutor send_message] Sending to Groq, prompt_length=" . strlen($fullUserMsg));
+        $aiResult = grokRequest($messages, GROQ_MODEL, 0.3, 1500);
 
         if (!$aiResult['success']) {
-            echo json_encode(['success' => false, 'error' => $aiResult['error']]);
+            error_log("[ai_tutor send_message] Groq error: " . $aiResult['error']);
+            echo json_encode(['success' => false, 'error' => 'AI Error: ' . $aiResult['error']]);
             exit;
         }
 
         $aiReply = trim($aiResult['text']);
         $tokens  = $aiResult['tokens'];
+        error_log("[ai_tutor send_message] Groq OK, tokens=$tokens, reply_length=" . strlen($aiReply));
 
-        // Format Answer & Citation block
-        if ($aiReply !== "I couldn't find this information in the selected study materials.") {
-            $bestChunk = $chunks[0];
-            $courseStr = ($bestChunk['course_code'] ?: 'N/A') . ' — ' . ($bestChunk['course_name'] ?: 'N/A');
-            $topicStr  = $bestChunk['topic_name'] ?: 'General';
-            $fileStr   = $bestChunk['file_name'] ?: 'N/A';
-            $pageStr   = $bestChunk['page_number'] ?: '1';
-            $confStr   = ($bestChunk['confidence_score'] ?: '100') . '%';
-            
-            $aiReply = "Answer\n\n" . $aiReply . "\n\nSource\nCourse: " . $courseStr . "\nTopic: " . $topicStr . "\nFile: " . $fileStr . "\nPage: " . $pageStr . "\nConfidence: " . $confStr;
+        if (stripos($aiReply, "I couldn't find") === false) {
+            $srcNames = implode(', ', array_column($file_rows, 'name'));
+            $aiReply  = "### Answer\n\n" . $aiReply . "\n\n---\n**Source:** " . $srcNames;
         }
 
-        // Save AI response to DB
         saveAiChat($conn, $user_id, $session_id, 'assistant', $aiReply, 'tutor', $course_id, $tokens);
+        logProgress($conn, $user_id, 'ai_chat', 'AI Tutor session', $course_id);
 
-        // Log progress
-        logProgress($conn, $user_id, 'ai_chat', 'Private AI Tutor session', $course_id);
-
-        echo json_encode([
-            'success' => true,
-            'reply'   => $aiReply,
-            'tokens'  => $tokens
-        ]);
+        echo json_encode(['success' => true, 'reply' => $aiReply, 'tokens' => $tokens]);
         exit;
     }
 
@@ -1236,8 +1259,19 @@ function sendMessage() {
         error: function(xhr, status, err) {
             hideTyping();
             setLoading(false);
-            console.error('[NoteNest AI Tutor] generate_answer.php AJAX error:', xhr.status, xhr.responseText);
-            appendBubble('ai', '⚠️ **Network error.** Please check your connection and try again.');
+            console.error('[NoteNest AI Tutor] generate_answer.php AJAX error:', xhr.status, status, err, xhr.responseText);
+            let errMsg = '⚠️ **Error:** Could not connect to AI service. Please try again.';
+            if (xhr.status === 500) {
+                errMsg = '⚠️ **Server Error (500):** Something went wrong on the server.';
+            } else if (xhr.status === 404) {
+                errMsg = '⚠️ **Error (404):** Endpoint generate_answer.php not found.';
+            } else if (xhr.responseText && xhr.responseText.includes('error')) {
+                try {
+                    const parsed = JSON.parse(xhr.responseText);
+                    if (parsed.error) errMsg = '⚠️ **Error:** ' + parsed.error;
+                } catch(e) {}
+            }
+            appendBubble('ai', errMsg);
         }
     });
 }

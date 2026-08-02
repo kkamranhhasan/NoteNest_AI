@@ -48,7 +48,7 @@ if (!isset($_SESSION['user_id'])) {
                 <i class="fa-regular fa-bell fa-lg"></i>
                 <span id="notifCount" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="display:none;">0</span>
             </a>
-            <div id="notifDropdown" class="dropdown-menu dropdown-menu-end p-2" style="min-width:300px;max-width:350px;display:none;"></div>
+            <div id="notifDropdown" class="dropdown-menu dropdown-menu-end p-3 shadow-lg border-0" style="min-width:320px;max-width:360px;display:none;position:absolute;right:0;top:100%;z-index:9999;background:#fff;border-radius:12px;"></div>
         </div>
         <a class="btn btn-link nav-ai-link<?php echo ($current_page === 'study_recommendations.php') ? ' nav-active' : ''; ?>" href="study_recommendations.php" title="Study Plan" style="color:#e67e22 !important;">
             <i class="fas fa-lightbulb"></i> Study Plan
@@ -77,7 +77,6 @@ if (!isset($_SESSION['user_id'])) {
                 <a href="profile.php" style="text-decoration:none;color:inherit;font-weight:500;"><?php echo htmlspecialchars($_SESSION['user_name']); ?></a>
             </span>
         </div>
-        <!-- Logout removed from navbar, moved to profile -->
     </div>
   </div>
 </nav>
@@ -86,7 +85,7 @@ if (!isset($_SESSION['user_id'])) {
 $(function() {
     function loadNotifCount() {
         $.get('notifications.php?action=count', function(data) {
-            var count = parseInt(data, 10);
+            var count = parseInt(data, 10) || 0;
             if (count > 0) {
                 $('#notifCount').text(count).show();
             } else {
@@ -101,9 +100,14 @@ $(function() {
     }
     $('#notifBell').on('click', function(e) {
         e.preventDefault();
-        loadNotifDropdown();
-        $.post('notifications.php?action=mark_read');
-        $('#notifCount').hide();
+        e.stopPropagation();
+        if ($('#notifDropdown').is(':visible')) {
+            $('#notifDropdown').hide();
+        } else {
+            loadNotifDropdown();
+            $.post('notifications.php?action=mark_read');
+            $('#notifCount').hide();
+        }
     });
     $(document).on('click', function(e) {
         if (!$(e.target).closest('#notifBell').length && !$(e.target).closest('#notifDropdown').length) {

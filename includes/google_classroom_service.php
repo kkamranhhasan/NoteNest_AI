@@ -462,12 +462,39 @@ function gc_api_get(string $url, string $accessToken): array {
 }
 
 /**
- * Save Google account tokens for a user.
+ * Clear all Google Classroom sync rows for a specific google_account_id.
+ * This is called when switching accounts or disconnecting.
+ * Does NOT delete NoteNest courses, folders, or files (permanent storage).
  */
-function gc_save_account(mysqli $conn, int $userId, string $email, string $accessToken, string $refreshToken, int $expiresIn): bool {
+function gc_clear_old_classroom_data(mysqli $conn, int $userId, int $googleAccountId): void {
+    error_log("[GC] Clearing old Classroom data | user_id: {$userId} | google_account_id: {$googleAccountId}");
+    foreach (['google_assignments', 'google_files', 'google_topics', 'google_courses'] as $table) {
+        $stmt = $conn->prepare("DELETE FROM {$table} WHERE user_id = ? AND google_account_id = ?");
+        $stmt->bind_param('ii', $userId, $googleAccountId);
+        $stmt->execute();
+        $affected = $stmt->affected_rows;
+        $stmt->close();
+        error_log("[GC] Cleared {$affected} rows from {$table}");
+    }
+}
+
+/**
+ * Save Google account tokens for a user.
+ * If a different Google account was previously connected, clears old Classroom data first.
+ * @return int The google_accounts.id (google_account_id) on success, 0 on failure
+ */
+function gc_save_account(mysqli $conn, int $userId, string $email, string $accessToken, string $refreshToken, int $expiresIn): int {
     $accessEnc  = gc_encrypt_token($accessToken);
     $refreshEnc = gc_encrypt_token($refreshToken);
     $expiry     = date('Y-m-d H:i:s', time() + $expiresIn);
+
+    // Check if there's an existing account and whether the email changed
+    $existing = gc_get_account($conn, $userId);
+    if ($existing && strtolower(trim($existing['google_email'])) !== strtolower(trim($email))) {
+        // Different account connected — clear old Classroom sync data
+        error_log("[GC] Account switch detected: '{$existing['google_email']}' → '{$email}' | user_id: {$userId}");
+        gc_clear_old_classroom_data($conn, $userId, (int)$existing['id']);
+    }
 
     // Upsert (INSERT ... ON DUPLICATE KEY UPDATE)
     $stmt = $conn->prepare(
@@ -484,17 +511,45 @@ function gc_save_account(mysqli $conn, int $userId, string $email, string $acces
     $stmt->bind_param('issss', $userId, $email, $accessEnc, $refreshEnc, $expiry);
     $ok = $stmt->execute();
     $stmt->close();
-    return $ok;
+
+    if (!$ok) return 0;
+
+    // Return the google_account_id for use in sync operations
+    $row = gc_get_account($conn, $userId);
+    $gaId = $row ? (int)$row['id'] : 0;
+    error_log("[GC] Account saved | email: {$email} | google_account_id: {$gaId} | user_id: {$userId}");
+    return $gaId;
 }
 
 /**
- * Disconnect Google account — remove tokens and optionally synced data mapping.
+ * Disconnect Google account — removes tokens AND clears all Google Classroom sync data
+ * (google_courses, google_topics, google_files, google_assignments).
+ * Does NOT delete NoteNest courses, folders, or files.
  */
 function gc_disconnect(mysqli $conn, int $userId): bool {
+    // Get current account_id before deleting
+    $account = gc_get_account($conn, $userId);
+    $gaId = $account ? (int)$account['id'] : 0;
+    error_log("[GC] Disconnecting | user_id: {$userId} | google_account_id: {$gaId} | email: " . ($account['google_email'] ?? 'unknown'));
+
+    // Clear all Classroom sync data for this account
+    if ($gaId > 0) {
+        gc_clear_old_classroom_data($conn, $userId, $gaId);
+    }
+
+    // Also clear sync logs for clean slate
+    $slDel = $conn->prepare("DELETE FROM google_sync_logs WHERE user_id = ?");
+    $slDel->bind_param('i', $userId);
+    $slDel->execute();
+    $slDel->close();
+
+    // Remove the google_accounts row (tokens)
     $stmt = $conn->prepare("DELETE FROM google_accounts WHERE user_id = ?");
     $stmt->bind_param('i', $userId);
     $ok = $stmt->execute();
     $stmt->close();
+
+    error_log("[GC] Disconnect complete | user_id: {$userId}");
     return $ok;
 }
 

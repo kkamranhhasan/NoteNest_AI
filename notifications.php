@@ -1,17 +1,23 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) session_start();
 require_once 'includes/db.php';
-if (!isset($_SESSION['user_id'])) exit;
-$user_id = $_SESSION['user_id'];
-$action = isset($_GET['action']) ? $_GET['action'] : (isset($_POST['action']) ? $_POST['action'] : '');
+
+if (!isset($_SESSION['user_id'])) {
+    echo '0';
+    exit;
+}
+
+$user_id = (int)$_SESSION['user_id'];
+$action  = isset($_GET['action']) ? $_GET['action'] : (isset($_POST['action']) ? $_POST['action'] : '');
+
 if ($action === 'count') {
     $stmt = $conn->prepare('SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0');
     $stmt->bind_param('i', $user_id);
     $stmt->execute();
     $stmt->bind_result($count);
     $stmt->fetch();
-    echo $count;
     $stmt->close();
+    echo (int)$count;
     exit;
 } elseif ($action === 'latest') {
     $stmt = $conn->prepare('SELECT message, created_at, is_read FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5');
@@ -20,16 +26,16 @@ if ($action === 'count') {
     $stmt->bind_result($message, $created_at, $is_read);
     $notifs = [];
     while ($stmt->fetch()) {
-        $notifs[] = ['message'=>$message, 'created_at'=>$created_at, 'is_read'=>$is_read];
+        $notifs[] = ['message' => $message, 'created_at' => $created_at, 'is_read' => $is_read];
     }
     $stmt->close();
     if (empty($notifs)) {
-        echo '<div class="text-center text-muted">No notifications.</div>';
+        echo '<div class="text-center text-muted py-3 small"><i class="fas fa-bell-slash me-1"></i> No notifications.</div>';
     } else {
         foreach ($notifs as $n) {
-            echo '<div class="border-bottom py-2">';
-            echo '<div class="small '.($n['is_read']?'text-muted':'fw-bold').'">'.htmlspecialchars($n['message']).'</div>';
-            echo '<div class="text-secondary small">'.date('M d, H:i', strtotime($n['created_at'])).'</div>';
+            echo '<div class="border-bottom py-2 px-1">';
+            echo '<div class="small ' . ($n['is_read'] ? 'text-muted' : 'fw-bold text-dark') . '">' . htmlspecialchars($n['message']) . '</div>';
+            echo '<div class="text-secondary" style="font-size: 0.75rem;"><i class="far fa-clock me-1"></i>' . date('M d, H:i', strtotime($n['created_at'])) . '</div>';
             echo '</div>';
         }
     }
@@ -39,4 +45,6 @@ if ($action === 'count') {
     echo 'ok';
     exit;
 }
+
 echo 'Invalid action';
+

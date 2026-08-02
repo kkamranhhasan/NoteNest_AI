@@ -500,7 +500,6 @@ logProgress($conn, $user_id, 'login', 'Dashboard visit');
                  alt="Profile" class="welcome-avatar">
         </a>
         <div style="flex:1;">
-            <p class="welcome-greeting"><?php echo $greeting; ?> 👋</p>
             <h2 class="welcome-name"><?php echo htmlspecialchars($db_name); ?></h2>
             <p class="welcome-meta">
                 <i class="fas fa-calendar-alt me-1"></i>Member since <?php echo $member_since; ?>

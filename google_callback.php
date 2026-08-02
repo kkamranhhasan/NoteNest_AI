@@ -56,10 +56,12 @@ if (empty($refreshToken)) {
 $userInfo = gc_get_user_info($accessToken);
 $email    = $userInfo['email'] ?? 'unknown@gmail.com';
 
-// Save to database
-$saved = gc_save_account($conn, $userId, $email, $accessToken, $refreshToken, $expiresIn);
+// Save to database — returns google_account_id (int > 0 on success)
+$savedAccountId = gc_save_account($conn, $userId, $email, $accessToken, $refreshToken, $expiresIn);
 
-if ($saved) {
+error_log("[GC] Callback | user_id: {$userId} | email: {$email} | google_account_id: {$savedAccountId}");
+
+if ($savedAccountId > 0) {
     $_SESSION['gc_message'] = "✅ Google account ({$email}) connected successfully! Click 'Sync Now' to import your courses.";
     $_SESSION['gc_msg_type'] = 'success';
 
