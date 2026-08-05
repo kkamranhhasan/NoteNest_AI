@@ -1303,14 +1303,14 @@ NoteNest-main/
 
 ### 🏆 Core Development Team
 
-| &nbsp; | Name | Student ID | GitHub | Role |
-|---|---|---|---|---|
-| 👑 | **Kamran Hasan** | 2022-2-60-077 | [@kkamranhasan](https://github.com/kkamranhasan) | 🏗️ Lead Developer & Architect |
-| 🎨 | **Natasa Tanjila Arshi** | 2023-3-60-387 | [@Natasha-Error203](https://github.com/Natasha-Error203) | Frontend Developer |
-| 🗄️ | **Umme Sumaya** | 2022-2-60-035 | [@Sumaya531](https://github.com/Sumaya531) | Database Engineer |
-| 🔗 | **Md Abdur Rahman** | 2023-3-60-024 | [@abdur-93](https://github.com/abdur-93) | Integration Specialist |
-| 🤖 | **Anika Binte Rashel** | 2022-3-60-336 | [@rayahkhondaker21-commits](https://github.com/rayahkhondaker21-commits) | AI / ML Engineer |
-| 🧪 | **MD. Yeasin Zaman Niyaj** | 2022-1-60-210 | [yeasinzaman.yz78](mailto:yeasinzaman.yz78@gmail.com) | QA & Documentation |
+| &nbsp; | Name | Student ID | GitHub |
+|---|---|---|---|
+| 👑 | **Kamran Hasan** | 2022-2-60-077 | [@kkamranhasan](https://github.com/kkamranhasan) |
+| 🎨 | **Natasa Tanjila Arshi** | 2023-3-60-387 | [@Natasha-Error203](https://github.com/Natasha-Error203) |
+| 🗄️ | **Umme Sumaya** | 2022-2-60-035 | [@Sumaya531](https://github.com/Sumaya531) |
+| 🔗 | **Md Abdur Rahman** | 2023-3-60-024 | [@abdur-93](https://github.com/abdur-93) |
+| 🤖 | **Anika Binte Rashel** | 2022-3-60-336 | [@rayahkhondaker21-commits](https://github.com/rayahkhondaker21-commits) |
+| 🧪 | **MD. Yeasin Zaman Niyaj** | 2022-1-60-210 | [yeasinzaman.yz78](mailto:yeasinzaman.yz78@gmail.com) |
 
 ---
 
@@ -1342,7 +1342,7 @@ NoteNest-main/
 | 🤖 AI Model | Llama 3.3 70B (Groq) |
 | 🔗 External APIs | 3 (Groq, Google Classroom, Google Drive) |
 | ☁️ Free Hosting | InfinityFree (PHP + MySQL) |
-| 🎓 Project Type | University Final Year Project |
+| 🎓 Project Type | Academic Project |
 
 </div>
 
