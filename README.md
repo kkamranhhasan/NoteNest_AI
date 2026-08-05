@@ -76,6 +76,71 @@
 
 </div>
 
+## 👥 Team & Contributions
+
+<div align="center">
+
+<h3>👨‍🏫 Project Supervisor</h3>
+<p>
+  <b>Ahmed Adnan</b><br/>
+  Department of Computer Science & Engineering<br/>
+  East West University<br/>
+  <i>Course: Software Engineering (CSE412)</i>
+</p>
+
+<h3>🏆 Core Development Team</h3>
+
+<table align="center">
+  <tr>
+    <td align="center" width="33%">
+      👑<br/>
+      <b>Kamran Hasan</b><br/>
+      <code>2022-2-60-077</code><br/>
+      <a href="https://github.com/kkamranhasan">@kkamranhasan</a>
+    </td>
+    <td align="center" width="33%">
+      🎨<br/>
+      <b>Natasa Tanjila Arshi</b><br/>
+      <code>2023-3-60-387</code><br/>
+      <a href="https://github.com/Natasha-Error203">@Natasha-Error203</a>
+    </td>
+    <td align="center" width="33%">
+      🗄️<br/>
+      <b>Umme Sumaya</b><br/>
+      <code>2022-2-60-035</code><br/>
+      <a href="https://github.com/Sumaya531">@Sumaya531</a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      🔗<br/>
+      <b>Md Abdur Rahman</b><br/>
+      <code>2023-3-60-024</code><br/>
+      <a href="https://github.com/abdur-93">@abdur-93</a>
+    </td>
+    <td align="center">
+      🤖<br/>
+      <b>Anika Binte Rashel</b><br/>
+      <code>2022-3-60-336</code><br/>
+      <a href="https://github.com/rayahkhondaker21-commits">@rayahkhondaker21-commits</a>
+    </td>
+    <td align="center">
+      🧪<br/>
+      <b>MD. Yeasin Zaman Niyaj</b><br/>
+      <code>2022-1-60-210</code><br/>
+      <a href="mailto:yeasinzaman.yz78@gmail.com">Contact</a>
+    </td>
+  </tr>
+</table>
+
+<br/>
+
+> 🎓 <b>Academic Project — Group Submission</b>
+
+</div>
+
+---
+
 ## 📖 Project Overview
 
 **NoteNest AI** was born from a real frustration: students today juggle multiple platforms — Google Classroom for coursework, cloud drives for files, separate apps for notes, and ChatGPT for studying — creating a fragmented, inefficient learning experience.
@@ -1283,34 +1348,6 @@ NoteNest-main/
 | 🔒 File Access Control | Strict ownership & permission checks before download |
 | 📧 Email Verification | Token-based verification before account activation |
 | 🔄 CSRF Awareness | Session-based action validation on sensitive operations |
-
----
-
-## 👥 Team & Contributions
-
-<div align="center">
-
-> 🎓 **Department of Computer Science & Engineering, East West University**
-> Course: Software Engineering (CSE412)
-
-
-</div>
-
-### 👨‍🏫 Project Supervisor
-- **Ahmed Adnan**
-- Department of Computer Science & Engineering
-- East West University
-
-### 🏆 Core Development Team
-
-| &nbsp; | Name | Student ID | GitHub |
-|---|---|---|---|
-| 👑 | **Kamran Hasan** | 2022-2-60-077 | [@kkamranhasan](https://github.com/kkamranhasan) |
-| 🎨 | **Natasa Tanjila Arshi** | 2023-3-60-387 | [@Natasha-Error203](https://github.com/Natasha-Error203) |
-| 🗄️ | **Umme Sumaya** | 2022-2-60-035 | [@Sumaya531](https://github.com/Sumaya531) |
-| 🔗 | **Md Abdur Rahman** | 2023-3-60-024 | [@abdur-93](https://github.com/abdur-93) |
-| 🤖 | **Anika Binte Rashel** | 2022-3-60-336 | [@rayahkhondaker21-commits](https://github.com/rayahkhondaker21-commits) |
-| 🧪 | **MD. Yeasin Zaman Niyaj** | 2022-1-60-210 | [yeasinzaman.yz78](mailto:yeasinzaman.yz78@gmail.com) |
 
 ---
 
