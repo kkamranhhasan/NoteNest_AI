@@ -1362,14 +1362,9 @@ and [Google](https://developers.google.com/classroom) for the Classroom API.
 
 <br/>
 
-**Built with ❤️ by Team NoteNest — Final Year Project 2026**
+**Built with ❤️ by Team NoteNest**
 
 <br/>
-
-[![GitHub stars](https://img.shields.io/github/stars/kkamranhasan/NoteNest?style=social)](https://github.com/kkamranhasan/NoteNest)
-&nbsp;
-[![GitHub forks](https://img.shields.io/github/forks/kkamranhasan/NoteNest?style=social)](https://github.com/kkamranhasan/NoteNest/fork)
-
 <br/>
 
 ```
