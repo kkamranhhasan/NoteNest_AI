@@ -49,6 +49,8 @@
 &nbsp;·&nbsp;
 **[🗄️ Database](#️-database-design)**
 &nbsp;·&nbsp;
+**[👥 Team](#-team--contributions)**
+&nbsp;·&nbsp;
 **[🎬 Demo](#-demo-video)**
 
 <br/>
@@ -1281,6 +1283,34 @@ NoteNest-main/
 | 🔒 File Access Control | Strict ownership & permission checks before download |
 | 📧 Email Verification | Token-based verification before account activation |
 | 🔄 CSRF Awareness | Session-based action validation on sensitive operations |
+
+---
+
+## 👥 Team & Contributions
+
+<div align="center">
+
+> 🎓 **Department of Computer Science & Engineering, East West University**
+> Course: Software Engineering (CSE412)
+> Final Year Project — Group Submission
+
+</div>
+
+### 👨‍🏫 Project Supervisor
+- **Ahmed Adnan**
+- Department of Computer Science & Engineering
+- East West University
+
+### 🏆 Core Development Team
+
+| &nbsp; | Name | Student ID | GitHub | Role |
+|---|---|---|---|---|
+| 👑 | **Kamran Hasan** | 2022-2-60-077 | [@kkamranhasan](https://github.com/kkamranhasan) | 🏗️ Lead Developer & Architect |
+| 🎨 | **Natasa Tanjila Arshi** | 2023-3-60-387 | [@Natasha-Error203](https://github.com/Natasha-Error203) | Frontend Developer |
+| 🗄️ | **Umme Sumaya** | 2022-2-60-035 | [@Sumaya531](https://github.com/Sumaya531) | Database Engineer |
+| 🔗 | **Md Abdur Rahman** | 2023-3-60-024 | [@abdur-93](https://github.com/abdur-93) | Integration Specialist |
+| 🤖 | **Anika Binte Rashel** | 2022-3-60-336 | [@rayahkhondaker21-commits](https://github.com/rayahkhondaker21-commits) | AI / ML Engineer |
+| 🧪 | **MD. Yeasin Zaman Niyaj** | 2022-1-60-210 | [yeasinzaman.yz78](mailto:yeasinzaman.yz78@gmail.com) | QA & Documentation |
 
 ---
 
