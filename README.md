@@ -33,6 +33,11 @@
 
 <br/>
 
+<!-- LIVE DEMO BUTTON -->
+[![🌐 Live Demo](https://img.shields.io/badge/🌐_LIVE_DEMO-notenest--ai.ct.ws-0ea5e9?style=for-the-badge)](https://notenest-ai.ct.ws/login.php)
+
+<br/>
+
 <!-- NAVIGATION -->
 **[📸 Screenshots](#-screenshots)**
 &nbsp;·&nbsp;
@@ -53,6 +58,8 @@
 > **NoteNest** is an intelligent academic resource management and AI-powered learning platform.
 > Built with PHP, MySQL, Bootstrap, JavaScript, Groq AI and Google Classroom API —
 > it brings your entire academic life into one seamless, intelligent dashboard.
+>
+> 🌐 **Live at: [notenest-ai.ct.ws](https://notenest-ai.ct.ws/login.php)**
 
 </div>
 
@@ -696,77 +703,100 @@ flowchart TD
     R --> S[✅ Sync Complete — UI refreshes]
 ```
 
-### 🤖 AI Tutor Flow
+## 📸 Screenshots
 
-```mermaid
-flowchart TD
-    A[Student opens AI Tutor] --> B[Loads previous chat history from DB]
-    B --> C[Student types academic question]
-    C --> D[AJAX POST to ai_tutor.php]
-    D --> E[Fetch user's study materials as context]
-    E --> F{RAG Search enabled?}
-    F -- Yes --> G[Query ChromaDB for relevant document chunks]
-    G --> H[Append document context to prompt]
-    F -- No --> I[Use question only]
-    H & I --> J[Send to Groq API llama-3.3-70b-versatile]
-    J --> K[Stream AI Response]
-    K --> L[Render Markdown in chat UI]
-    L --> M[Save exchange to ai_chat_history]
-    M --> N[Student continues conversation]
-    N --> C
-```
-
-### 📝 AI Exam Flow
-
-```mermaid
-flowchart TD
-    A[Student opens AI Exam] --> B[Select Topic or Upload Document]
-    B --> C[Choose Exam Type: MCQ / Short Answer / Mixed]
-    C --> D[Set Number of Questions]
-    D --> E[Click Generate Exam]
-    E --> F[generate_exam.php sends prompt to Groq AI]
-    F --> G[Groq generates structured exam JSON]
-    G --> H[Exam displayed in interactive UI]
-    H --> I[Student answers all questions]
-    I --> J[Click Submit Exam]
-    J --> K[generate_answer.php sends answers to Groq AI]
-    K --> L[AI evaluates each answer]
-    L --> M[Score calculated + detailed feedback generated]
-    M --> N[Result saved in ai_evaluations table]
-    N --> O[Score shown in Progress Analytics heatmap]
-```
+> 🌐 **Live Application:** [notenest-ai.ct.ws](https://notenest-ai.ct.ws/login.php) — Live screenshots captured from the deployed system.
 
 ---
 
-## 📸 Screenshots
+### 📊 Dashboard — Overview
+> **Live:** [notenest-ai.ct.ws/dashboard.php](https://notenest-ai.ct.ws/dashboard.php)
 
-> 📌 Add screenshots to a `screenshots/` folder in the project root to populate this section.
+![Dashboard Overview](screenshots/dashboard.png)
 
-### 🔐 Login Page
-![Login Page](screenshots/login.png)
+---
 
-### 📊 Dashboard
-![Dashboard](screenshots/dashboard.png)
+### 📊 Dashboard — Activity & Recent Scores
+> **Live:** [notenest-ai.ct.ws/dashboard.php](https://notenest-ai.ct.ws/dashboard.php)
+
+![Dashboard Activity & Analytics](screenshots/dashboard_analytics.png)
+
+---
 
 ### 📘 Course Management
+> **Live:** [notenest-ai.ct.ws/course_management.php](https://notenest-ai.ct.ws/course_management.php)
+
 ![Course Management](screenshots/course_management.png)
 
+---
+
 ### 🏫 Google Classroom Integration
-![Google Classroom](screenshots/google_classroom.png)
+> **Live:** [notenest-ai.ct.ws/google_classroom.php](https://notenest-ai.ct.ws/google_classroom.php)
+
+![Google Classroom Integration](screenshots/google_classroom.png)
+
+---
 
 ### 🤖 AI Tutor
+> **Live:** [notenest-ai.ct.ws/ai_tutor.php](https://notenest-ai.ct.ws/ai_tutor.php)
+
 ![AI Tutor](screenshots/ai_tutor.png)
 
-### 📝 AI Exam
-![AI Exam](screenshots/ai_exam.png)
+---
 
-### 📈 Progress Analytics
-![Analytics](screenshots/progress_analytics.png)
+### 📝 AI Exam Practice & Generation
+> **Live:** [notenest-ai.ct.ws/ai_exam.php](https://notenest-ai.ct.ws/ai_exam.php)
+
+![AI Exam Practice](screenshots/ai_exam.png)
+
+---
+
+### 📈 Learning & Progress Analytics
+> **Live:** [notenest-ai.ct.ws/progress_analytics.php](https://notenest-ai.ct.ws/progress_analytics.php)
+
+![Progress Analytics](screenshots/progress_analytics.png)
+
+---
 
 ### 🎙️ Lecture Recorder
+> **Live:** [notenest-ai.ct.ws/lecture_recorder.php](https://notenest-ai.ct.ws/lecture_recorder.php)
+
 ![Lecture Recorder](screenshots/lecture_recorder.png)
 
-> 💡 **Tip:** Take screenshots of each page in your browser, save them in `screenshots/`, and GitHub will render them automatically in this README.
+---
+
+### 💡 Adaptive Study Recommendations
+> **Live:** [notenest-ai.ct.ws/study_recommendations.php](https://notenest-ai.ct.ws/study_recommendations.php)
+
+![Study Recommendations](screenshots/study_recommendations.png)
+
+---
+
+### 📁 My NoteNest (File Manager)
+> **Live:** [notenest-ai.ct.ws/my_note_nest.php](https://notenest-ai.ct.ws/my_note_nest.php)
+
+![My NoteNest File Manager](screenshots/my_note_nest.png)
+
+---
+
+### 🤝 Shared NoteNest
+> **Live:** [notenest-ai.ct.ws/shared_note_nest.php](https://notenest-ai.ct.ws/shared_note_nest.php)
+
+![Shared NoteNest](screenshots/shared_note_nest.png)
+
+---
+
+### ⭐ My Favorites
+> **Live:** [notenest-ai.ct.ws/favorites.php](https://notenest-ai.ct.ws/favorites.php)
+
+![My Favorites](screenshots/favorites.png)
+
+---
+
+### 👤 Profile & Account Settings
+> **Live:** [notenest-ai.ct.ws/profile.php](https://notenest-ai.ct.ws/profile.php)
+
+![Profile Settings](screenshots/profile.png)
 
 ---
 
