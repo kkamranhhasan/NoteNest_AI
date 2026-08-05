@@ -197,25 +197,19 @@
 
 ```mermaid
 %%{init: {
-  'theme': 'base',
+  'theme': 'default',
   'themeVariables': {
+    'darkMode': false,
     'background': '#ffffff',
     'mainBkg': '#ffffff',
-    'secondBkg': '#ffffff',
+    'nodeBorder': '#2563eb',
     'primaryColor': '#ffffff',
     'primaryTextColor': '#0f172a',
-    'primaryBorderColor': '#64748b',
+    'primaryBorderColor': '#2563eb',
     'lineColor': '#2563eb',
-    'secondaryColor': '#f8fafc',
-    'tertiaryColor': '#f1f5f9',
-    'nodeBorder': '#475569',
-    'clusterBkg': '#ffffff',
-    'clusterBorder': '#cbd5e1',
-    'titleColor': '#0f172a',
-    'edgeLabelBackground': '#ffffff',
-    'attributeBackgroundColorEven': '#f8fafc',
-    'attributeBackgroundColorOdd': '#ffffff',
-    'fontFamily': 'sans-serif'
+    'clusterBkg': '#f8fafc',
+    'clusterBorder': '#94a3b8',
+    'edgeLabelBackground': '#ffffff'
   }
 }}%%
 graph TB
@@ -281,25 +275,22 @@ graph TB
 
 ```mermaid
 %%{init: {
-  'theme': 'base',
+  'theme': 'default',
   'themeVariables': {
+    'darkMode': false,
     'background': '#ffffff',
-    'mainBkg': '#ffffff',
-    'secondBkg': '#ffffff',
-    'primaryColor': '#ffffff',
-    'primaryTextColor': '#0f172a',
-    'primaryBorderColor': '#64748b',
-    'lineColor': '#2563eb',
-    'secondaryColor': '#f8fafc',
-    'tertiaryColor': '#f1f5f9',
-    'nodeBorder': '#475569',
-    'clusterBkg': '#ffffff',
-    'clusterBorder': '#cbd5e1',
-    'titleColor': '#0f172a',
-    'edgeLabelBackground': '#ffffff',
-    'attributeBackgroundColorEven': '#f8fafc',
-    'attributeBackgroundColorOdd': '#ffffff',
-    'fontFamily': 'sans-serif'
+    'actorBkg': '#ffffff',
+    'actorBorder': '#2563eb',
+    'actorTextColor': '#0f172a',
+    'actorLineColor': '#2563eb',
+    'signalColor': '#2563eb',
+    'signalTextColor': '#0f172a',
+    'labelBoxBkgColor': '#f8fafc',
+    'labelBoxBorderColor': '#cbd5e1',
+    'labelTextColor': '#0f172a',
+    'loopTextColor': '#0f172a',
+    'noteBkgColor': '#f8fafc',
+    'noteTextColor': '#0f172a'
   }
 }}%%
 sequenceDiagram
@@ -336,25 +327,17 @@ sequenceDiagram
 
 ```mermaid
 %%{init: {
-  'theme': 'base',
+  'theme': 'default',
   'themeVariables': {
+    'darkMode': false,
     'background': '#ffffff',
-    'mainBkg': '#ffffff',
-    'secondBkg': '#ffffff',
     'primaryColor': '#ffffff',
     'primaryTextColor': '#0f172a',
-    'primaryBorderColor': '#64748b',
+    'primaryBorderColor': '#2563eb',
     'lineColor': '#2563eb',
-    'secondaryColor': '#f8fafc',
-    'tertiaryColor': '#f1f5f9',
-    'nodeBorder': '#475569',
-    'clusterBkg': '#ffffff',
-    'clusterBorder': '#cbd5e1',
-    'titleColor': '#0f172a',
-    'edgeLabelBackground': '#ffffff',
-    'attributeBackgroundColorEven': '#f8fafc',
-    'attributeBackgroundColorOdd': '#ffffff',
-    'fontFamily': 'sans-serif'
+    'tertiaryColor': '#f8fafc',
+    'attributeBackgroundColorEven': '#ffffff',
+    'attributeBackgroundColorOdd': '#f8fafc'
   }
 }}%%
 erDiagram
@@ -682,25 +665,19 @@ erDiagram
 
 ```mermaid
 %%{init: {
-  'theme': 'base',
+  'theme': 'default',
   'themeVariables': {
+    'darkMode': false,
     'background': '#ffffff',
     'mainBkg': '#ffffff',
-    'secondBkg': '#ffffff',
+    'nodeBorder': '#2563eb',
     'primaryColor': '#ffffff',
     'primaryTextColor': '#0f172a',
-    'primaryBorderColor': '#64748b',
+    'primaryBorderColor': '#2563eb',
     'lineColor': '#2563eb',
-    'secondaryColor': '#f8fafc',
-    'tertiaryColor': '#f1f5f9',
-    'nodeBorder': '#475569',
-    'clusterBkg': '#ffffff',
-    'clusterBorder': '#cbd5e1',
-    'titleColor': '#0f172a',
-    'edgeLabelBackground': '#ffffff',
-    'attributeBackgroundColorEven': '#f8fafc',
-    'attributeBackgroundColorOdd': '#ffffff',
-    'fontFamily': 'sans-serif'
+    'clusterBkg': '#f8fafc',
+    'clusterBorder': '#94a3b8',
+    'edgeLabelBackground': '#ffffff'
   }
 }}%%
 flowchart TD
@@ -730,25 +707,19 @@ flowchart TD
 
 ```mermaid
 %%{init: {
-  'theme': 'base',
+  'theme': 'default',
   'themeVariables': {
+    'darkMode': false,
     'background': '#ffffff',
     'mainBkg': '#ffffff',
-    'secondBkg': '#ffffff',
+    'nodeBorder': '#2563eb',
     'primaryColor': '#ffffff',
     'primaryTextColor': '#0f172a',
-    'primaryBorderColor': '#64748b',
+    'primaryBorderColor': '#2563eb',
     'lineColor': '#2563eb',
-    'secondaryColor': '#f8fafc',
-    'tertiaryColor': '#f1f5f9',
-    'nodeBorder': '#475569',
-    'clusterBkg': '#ffffff',
-    'clusterBorder': '#cbd5e1',
-    'titleColor': '#0f172a',
-    'edgeLabelBackground': '#ffffff',
-    'attributeBackgroundColorEven': '#f8fafc',
-    'attributeBackgroundColorOdd': '#ffffff',
-    'fontFamily': 'sans-serif'
+    'clusterBkg': '#f8fafc',
+    'clusterBorder': '#94a3b8',
+    'edgeLabelBackground': '#ffffff'
   }
 }}%%
 flowchart LR
@@ -771,25 +742,19 @@ flowchart LR
 
 ```mermaid
 %%{init: {
-  'theme': 'base',
+  'theme': 'default',
   'themeVariables': {
+    'darkMode': false,
     'background': '#ffffff',
     'mainBkg': '#ffffff',
-    'secondBkg': '#ffffff',
+    'nodeBorder': '#2563eb',
     'primaryColor': '#ffffff',
     'primaryTextColor': '#0f172a',
-    'primaryBorderColor': '#64748b',
+    'primaryBorderColor': '#2563eb',
     'lineColor': '#2563eb',
-    'secondaryColor': '#f8fafc',
-    'tertiaryColor': '#f1f5f9',
-    'nodeBorder': '#475569',
-    'clusterBkg': '#ffffff',
-    'clusterBorder': '#cbd5e1',
-    'titleColor': '#0f172a',
-    'edgeLabelBackground': '#ffffff',
-    'attributeBackgroundColorEven': '#f8fafc',
-    'attributeBackgroundColorOdd': '#ffffff',
-    'fontFamily': 'sans-serif'
+    'clusterBkg': '#f8fafc',
+    'clusterBorder': '#94a3b8',
+    'edgeLabelBackground': '#ffffff'
   }
 }}%%
 flowchart TD
