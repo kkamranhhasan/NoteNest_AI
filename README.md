@@ -1,29 +1,71 @@
 <div align="center">
 
-<img src="img/fav.ico" alt="NoteNest AI Logo" width="80"/>
-
-# 🧠 NoteNest AI
-
-### *Your Intelligent Academic Companion*
-
-> **An all-in-one AI-powered academic resource management platform that transforms the way students learn, organize, and excel.**
+<!-- PROJECT LOGO -->
+<img src="img/fav.ico" alt="NoteNest AI Logo" width="100"/>
 
 <br/>
 
+# NoteNest — An AI-Powered Academic Resource Management Platform
+
+<p align="center">
+  <em>Organize smarter. Study deeper. Excel further.</em>
+</p>
+
+<br/>
+
+<!-- TECH BADGES -->
 [![PHP](https://img.shields.io/badge/PHP-8.x-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
 [![MySQL](https://img.shields.io/badge/MySQL-8.x-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://mysql.com)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5.3-7952B3?style=for-the-badge&logo=bootstrap&logoColor=white)](https://getbootstrap.com)
 [![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
+
 [![Groq AI](https://img.shields.io/badge/Groq-Llama%203.3%2070B-F55036?style=for-the-badge&logo=openai&logoColor=white)](https://groq.com)
 [![Google Classroom](https://img.shields.io/badge/Google_Classroom-API-4285F4?style=for-the-badge&logo=googleclassroom&logoColor=white)](https://developers.google.com/classroom)
-[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Final%20Year%20Project-f97316?style=for-the-badge)]()
+[![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector%20DB-10B981?style=for-the-badge&logo=python&logoColor=white)](https://trychroma.com)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
+
+<!-- STATUS BADGES -->
+[![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)]()
+[![FYP](https://img.shields.io/badge/Final%20Year%20Project-CSE-f97316?style=flat-square)]()
+[![DB Tables](https://img.shields.io/badge/Database%20Tables-26-6366f1?style=flat-square)]()
+[![Modules](https://img.shields.io/badge/Modules-11%2B-0ea5e9?style=flat-square)]()
+[![Free Hosting](https://img.shields.io/badge/Free%20Hosting-InfinityFree-22c55e?style=flat-square)](https://infinityfree.net)
 
 <br/>
 
-[📸 Screenshots](#-screenshots) · [🚀 Quick Start](#-installation--setup) · [✨ Features](#-features) · [🏗 Architecture](#️-system-architecture) · [🎬 Demo](#-demo-video)
+<!-- NAVIGATION -->
+**[📸 Screenshots](#-screenshots)**
+&nbsp;·&nbsp;
+**[⚡ Quick Start](#-installation--setup)**
+&nbsp;·&nbsp;
+**[✨ Features](#-features)**
+&nbsp;·&nbsp;
+**[🏗️ Architecture](#️-system-architecture)**
+&nbsp;·&nbsp;
+**[🗄️ Database](#️-database-design)**
+&nbsp;·&nbsp;
+**[👥 Team](#-team--contributions)**
+&nbsp;·&nbsp;
+**[🎬 Demo](#-demo-video)**
 
----
+<br/>
+
+> **NoteNest** is an intelligent academic resource management and AI-powered learning platform.
+> Built with PHP, MySQL, Bootstrap, JavaScript, Groq AI and Google Classroom API —
+> it brings your entire academic life into one seamless, intelligent dashboard.
+
+</div>
+
+<br/>
+
+<div align="center">
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║  📘 Courses  ·  📁 Files  ·  🤖 AI Tutor  ·  📝 AI Exam       ║
+║  🏫 Google Classroom  ·  📊 Analytics  ·  🎙️ Lecture Recorder  ║
+╚══════════════════════════════════════════════════════════════════╝
+```
 
 </div>
 
@@ -244,6 +286,26 @@ sequenceDiagram
 > 📊 Full ER diagram covering all **26 database tables** and their relationships.
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor':        '#1e3a5f',
+    'primaryTextColor':    '#e2e8f0',
+    'primaryBorderColor':  '#38bdf8',
+    'lineColor':           '#38bdf8',
+    'secondaryColor':      '#0f2640',
+    'tertiaryColor':       '#0e4429',
+    'background':          '#0d1b2a',
+    'mainBkg':             '#1e3a5f',
+    'nodeBorder':          '#38bdf8',
+    'clusterBkg':          '#1e3a5f',
+    'titleColor':          '#38bdf8',
+    'edgeLabelBackground': '#1e3a5f',
+    'attributeBackgroundColorEven': '#162d4a',
+    'attributeBackgroundColorOdd':  '#1a3550',
+    'fontFamily': 'ui-monospace, monospace'
+  }
+}}%%
 erDiagram
     USERS {
         int id PK
@@ -1117,16 +1179,114 @@ NoteNest-main/
 
 ---
 
-## 👥 Team Members
+## 👥 Team & Contributions
 
-| Name | Student ID | Role | Responsibilities |
-|---|---|---|---|
-| **Kamran Hasan** | 2022-2-60-077 | 🏗️ Lead Developer & Architect | Full-stack PHP, Google Classroom API, AI Integration, Database Design |
-| **Natasa Tanjila Arshi** | 2023-3-60-387 | 🎨 Frontend Developer | UI/UX Design, Bootstrap 5, JavaScript, AJAX |
-| **Umme Sumaya** | 2022-2-60-035 | 🗄️ Database Engineer | Database design, SQL schema, query optimization |
-| **Md Abdur Rahman** | 2023-3-60-024 | 🔗 Integration Specialist | Google OAuth, Classroom API sync, cron jobs |
-| **Anika Binte Rashel** | 2022-3-60-336 | 🤖 AI / ML Engineer | Groq API, Prompt Engineering, ChromaDB RAG, Exam System |
-| **MD. Yeasin Zaman Niyaj** | 2022-1-60-210 | 🧪 QA & Documentation | Testing, documentation, deployment, analytics |
+<div align="center">
+
+> 🎓 **Department of Computer Science & Engineering**
+> Final Year Project — Group Submission
+
+</div>
+
+### 🏆 Core Development Team
+
+| &nbsp; | Name | Student ID | GitHub | Role |
+|---|---|---|---|---|
+| 👑 | **Kamran Hasan** | 2022-2-60-077 | [@kkamranhasan](https://github.com/kkamranhasan) | 🏗️ Lead Developer & Architect |
+| 🎨 | **Natasa Tanjila Arshi** | 2023-3-60-387 | [@Natasha-Error203](https://github.com/Natasha-Error203) | Frontend Developer |
+| 🗄️ | **Umme Sumaya** | 2022-2-60-035 | [@Sumaya531](https://github.com/Sumaya531) | Database Engineer |
+| 🔗 | **Md Abdur Rahman** | 2023-3-60-024 | [@abdur-93](https://github.com/abdur-93) | Integration Specialist |
+| 🤖 | **Anika Binte Rashel** | 2022-3-60-336 | [@rayahkhondaker21-commits](https://github.com/rayahkhondaker21-commits) | AI / ML Engineer |
+| 🧪 | **MD. Yeasin Zaman Niyaj** | 2022-1-60-210 | [yeasinzaman.yz78](mailto:yeasinzaman.yz78@gmail.com) | QA & Documentation |
+
+---
+
+### 📋 Individual Contributions
+
+<details>
+<summary><strong>👑 Kamran Hasan — Lead Developer & Architect</strong> (click to expand)</summary>
+
+> Primary developer and architect of the entire platform.
+
+| Area | Contribution |
+|---|---|
+| 🖥️ Backend Architecture | Designed and built the full PHP 8.x application structure from scratch |
+| 🗄️ Database Design | Architected all 26 MySQL tables, foreign key relationships, and migrations |
+| 🏫 Google Classroom API | Implemented OAuth 2.0 flow, full sync engine, assignment analysis, cron automation |
+| 🤖 AI Integration | Built the AI Tutor chat, AI Exam generator, evaluator, and study recommendations using Groq |
+| 🔍 Vector RAG | Set up ChromaDB Python microservice, embedding pipeline, and semantic search |
+| 📁 File System | Designed hierarchical folder tree, file upload, preview (PDF.js, Mammoth, SheetJS), sharing |
+| 📊 Analytics | Implemented heatmaps, exam score charts, and progress tracking with Chart.js |
+| 🎙️ Lecture Recorder | Built in-browser audio recorder with real-time waveform visualization |
+| 🔒 Security | Implemented all security layers: Bcrypt, prepared statements, XSS prevention, route guards |
+| 🐳 DevOps | Configured Docker, docker-compose, and InfinityFree free hosting deployment |
+
+</details>
+
+<details>
+<summary><strong>🎨 Natasa Tanjila Arshi — Frontend Developer</strong></summary>
+
+| Area | Contribution |
+|---|---|
+| 🎨 UI Review | Reviewed and gave feedback on UI/UX design across modules |
+| 📱 Responsiveness Testing | Tested mobile/tablet responsiveness across pages |
+| 🧪 Cross-browser Testing | Verified layout consistency across Chrome, Firefox, and Edge |
+| 📸 Screenshots | Captured and documented UI screenshots for project report |
+| 📝 Project Report | Contributed to the Frontend Design section of the FYP report |
+
+</details>
+
+<details>
+<summary><strong>🗄️ Umme Sumaya — Database Engineer</strong></summary>
+
+| Area | Contribution |
+|---|---|
+| 📋 ER Diagram | Prepared the Entity Relationship Diagram for the project report |
+| 🗄️ Schema Documentation | Documented all 26 tables with descriptions for the report |
+| 🔎 Query Review | Reviewed key SQL queries for correctness |
+| 📝 Project Report | Contributed to the Database Design section of the FYP report |
+| 🧪 DB Testing | Tested database integrity by inserting and verifying sample data |
+
+</details>
+
+<details>
+<summary><strong>🔗 Md Abdur Rahman — Integration Specialist</strong></summary>
+
+| Area | Contribution |
+|---|---|
+| 🏫 GC API Research | Researched Google Classroom API endpoints and OAuth 2.0 flow documentation |
+| ⚙️ Config Setup | Helped configure Google Cloud Console project and API credentials |
+| 🔄 Sync Testing | Tested Google Classroom sync with real classroom data |
+| 📝 Project Report | Contributed to the Google Classroom Integration section of the FYP report |
+| 📅 Calendar Testing | Verified calendar event population from assignment due dates |
+
+</details>
+
+<details>
+<summary><strong>🤖 Anika Binte Rashel — AI / ML Engineer</strong></summary>
+
+| Area | Contribution |
+|---|---|
+| 🤖 AI Research | Researched Groq API, Llama model capabilities, and prompt engineering strategies |
+| 📝 Prompt Design | Assisted in designing exam generation and AI tutor prompt templates |
+| 🧪 AI Testing | Tested AI Tutor and AI Exam responses for accuracy and quality |
+| 📊 Evaluation | Evaluated AI exam scoring output and documented feedback quality |
+| 📝 Project Report | Contributed to the AI Features section of the FYP report |
+
+</details>
+
+<details>
+<summary><strong>🧪 MD. Yeasin Zaman Niyaj — QA & Documentation</strong></summary>
+
+| Area | Contribution |
+|---|---|
+| 📋 README | Contributed to project README structure and documentation layout |
+| 🧪 Manual QA | Performed manual testing of registration, login, and file upload flows |
+| 🐛 Bug Reporting | Identified and reported UI bugs and form validation issues |
+| 📝 Project Report | Contributed to the Introduction and Abstract sections of the FYP report |
+| 🚀 Deployment | Assisted with InfinityFree deployment setup and testing |
+
+</details>
 
 ---
 
@@ -1164,40 +1324,40 @@ NoteNest-main/
 
 ---
 
-## 📝 License
-
-```
-MIT License
-
-Copyright (c) 2026 Kamran Hasan
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-```
-
----
-
 <div align="center">
 
-**Built with ❤️ as a Final Year Project**
+---
 
-⭐ If you found this project helpful, please give it a star!
+### 🙏 Acknowledgements
 
-[![GitHub stars](https://img.shields.io/github/stars/kkamranhasan/NoteNest?style=social)](https://github.com/kkamranhasan/NoteNest)
+We thank the **Department of Computer Science & Engineering** for their guidance and support.
+Special thanks to [Groq](https://groq.com) for providing lightning-fast AI inference,
+and [Google](https://developers.google.com/classroom) for the Classroom API.
 
 ---
 
-*NoteNest AI — Empowering Students with Intelligence* 🧠
+<br/>
+
+**Built with ❤️ by Team NoteNest — Final Year Project 2026**
+
+<br/>
+
+[![GitHub stars](https://img.shields.io/github/stars/kkamranhasan/NoteNest?style=social)](https://github.com/kkamranhasan/NoteNest)
+&nbsp;
+[![GitHub forks](https://img.shields.io/github/forks/kkamranhasan/NoteNest?style=social)](https://github.com/kkamranhasan/NoteNest/fork)
+
+<br/>
+
+```
+ ███╗   ██╗ ██████╗ ████████╗███████╗███╗   ██╗███████╗███████╗████████╗
+ ████╗  ██║██╔═══██╗╚══██╔══╝██╔════╝████╗  ██║██╔════╝██╔════╝╚══██╔══╝
+ ██╔██╗ ██║██║   ██║   ██║   █████╗  ██╔██╗ ██║█████╗  ███████╗   ██║
+ ██║╚██╗██║██║   ██║   ██║   ██╔══╝  ██║╚██╗██║██╔══╝  ╚════██║   ██║
+ ██║ ╚████║╚██████╔╝   ██║   ███████╗██║ ╚████║███████╗███████║   ██║
+ ╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═══╝╚══════╝╚══════╝   ╚═╝
+                  An AI-Powered Academic Resource Management Platform
+```
+
+*NoteNest — Organize smarter. Study deeper. Excel further.* 🧠
 
 </div>
