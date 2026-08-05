@@ -8,7 +8,7 @@
 # NoteNest — An AI-Powered Academic Resource Management Platform
 
 <p align="center">
-  <em>Organize smarter. Study deeper. Excel further.</em>
+  <em> # Organize smarter. Study deeper. Excel further.</em>
 </p>
 
 <br/>
