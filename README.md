@@ -49,8 +49,6 @@
 &nbsp;·&nbsp;
 **[🗄️ Database](#️-database-design)**
 &nbsp;·&nbsp;
-**[👥 Team](#-team--contributions)**
-&nbsp;·&nbsp;
 **[🎬 Demo](#-demo-video)**
 
 <br/>
@@ -198,6 +196,28 @@
 ### High-Level Architecture
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'background': '#ffffff',
+    'mainBkg': '#ffffff',
+    'secondBkg': '#ffffff',
+    'primaryColor': '#ffffff',
+    'primaryTextColor': '#0f172a',
+    'primaryBorderColor': '#64748b',
+    'lineColor': '#2563eb',
+    'secondaryColor': '#f8fafc',
+    'tertiaryColor': '#f1f5f9',
+    'nodeBorder': '#475569',
+    'clusterBkg': '#ffffff',
+    'clusterBorder': '#cbd5e1',
+    'titleColor': '#0f172a',
+    'edgeLabelBackground': '#ffffff',
+    'attributeBackgroundColorEven': '#f8fafc',
+    'attributeBackgroundColorOdd': '#ffffff',
+    'fontFamily': 'sans-serif'
+  }
+}}%%
 graph TB
     subgraph CLIENT["🌐 Client Layer"]
         U[👤 User / Student]
@@ -260,6 +280,28 @@ graph TB
 ### 🔄 Request Flow — Google Classroom Sync
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'background': '#ffffff',
+    'mainBkg': '#ffffff',
+    'secondBkg': '#ffffff',
+    'primaryColor': '#ffffff',
+    'primaryTextColor': '#0f172a',
+    'primaryBorderColor': '#64748b',
+    'lineColor': '#2563eb',
+    'secondaryColor': '#f8fafc',
+    'tertiaryColor': '#f1f5f9',
+    'nodeBorder': '#475569',
+    'clusterBkg': '#ffffff',
+    'clusterBorder': '#cbd5e1',
+    'titleColor': '#0f172a',
+    'edgeLabelBackground': '#ffffff',
+    'attributeBackgroundColorEven': '#f8fafc',
+    'attributeBackgroundColorOdd': '#ffffff',
+    'fontFamily': 'sans-serif'
+  }
+}}%%
 sequenceDiagram
     participant S as 👤 Student
     participant F as 🎨 Frontend
@@ -296,21 +338,23 @@ sequenceDiagram
 %%{init: {
   'theme': 'base',
   'themeVariables': {
-    'primaryColor':        '#1e3a5f',
-    'primaryTextColor':    '#e2e8f0',
-    'primaryBorderColor':  '#38bdf8',
-    'lineColor':           '#38bdf8',
-    'secondaryColor':      '#0f2640',
-    'tertiaryColor':       '#0e4429',
-    'background':          '#0d1b2a',
-    'mainBkg':             '#1e3a5f',
-    'nodeBorder':          '#38bdf8',
-    'clusterBkg':          '#1e3a5f',
-    'titleColor':          '#38bdf8',
-    'edgeLabelBackground': '#1e3a5f',
-    'attributeBackgroundColorEven': '#162d4a',
-    'attributeBackgroundColorOdd':  '#1a3550',
-    'fontFamily': 'ui-monospace, monospace'
+    'background': '#ffffff',
+    'mainBkg': '#ffffff',
+    'secondBkg': '#ffffff',
+    'primaryColor': '#ffffff',
+    'primaryTextColor': '#0f172a',
+    'primaryBorderColor': '#64748b',
+    'lineColor': '#2563eb',
+    'secondaryColor': '#f8fafc',
+    'tertiaryColor': '#f1f5f9',
+    'nodeBorder': '#475569',
+    'clusterBkg': '#ffffff',
+    'clusterBorder': '#cbd5e1',
+    'titleColor': '#0f172a',
+    'edgeLabelBackground': '#ffffff',
+    'attributeBackgroundColorEven': '#f8fafc',
+    'attributeBackgroundColorOdd': '#ffffff',
+    'fontFamily': 'sans-serif'
   }
 }}%%
 erDiagram
@@ -637,6 +681,28 @@ erDiagram
 ### 🔐 Authentication Flow
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'background': '#ffffff',
+    'mainBkg': '#ffffff',
+    'secondBkg': '#ffffff',
+    'primaryColor': '#ffffff',
+    'primaryTextColor': '#0f172a',
+    'primaryBorderColor': '#64748b',
+    'lineColor': '#2563eb',
+    'secondaryColor': '#f8fafc',
+    'tertiaryColor': '#f1f5f9',
+    'nodeBorder': '#475569',
+    'clusterBkg': '#ffffff',
+    'clusterBorder': '#cbd5e1',
+    'titleColor': '#0f172a',
+    'edgeLabelBackground': '#ffffff',
+    'attributeBackgroundColorEven': '#f8fafc',
+    'attributeBackgroundColorOdd': '#ffffff',
+    'fontFamily': 'sans-serif'
+  }
+}}%%
 flowchart TD
     A([👤 User Visits Site]) --> B{Has Account?}
     B -- No --> C[📝 Register Page]
@@ -663,6 +729,28 @@ flowchart TD
 ### 📘 Course Creation & File Upload
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'background': '#ffffff',
+    'mainBkg': '#ffffff',
+    'secondBkg': '#ffffff',
+    'primaryColor': '#ffffff',
+    'primaryTextColor': '#0f172a',
+    'primaryBorderColor': '#64748b',
+    'lineColor': '#2563eb',
+    'secondaryColor': '#f8fafc',
+    'tertiaryColor': '#f1f5f9',
+    'nodeBorder': '#475569',
+    'clusterBkg': '#ffffff',
+    'clusterBorder': '#cbd5e1',
+    'titleColor': '#0f172a',
+    'edgeLabelBackground': '#ffffff',
+    'attributeBackgroundColorEven': '#f8fafc',
+    'attributeBackgroundColorOdd': '#ffffff',
+    'fontFamily': 'sans-serif'
+  }
+}}%%
 flowchart LR
     A[👤 Student] --> B[Go to Course Management]
     B --> C[Create New Course]
@@ -682,6 +770,28 @@ flowchart LR
 ### 🏫 Google Classroom Sync
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'background': '#ffffff',
+    'mainBkg': '#ffffff',
+    'secondBkg': '#ffffff',
+    'primaryColor': '#ffffff',
+    'primaryTextColor': '#0f172a',
+    'primaryBorderColor': '#64748b',
+    'lineColor': '#2563eb',
+    'secondaryColor': '#f8fafc',
+    'tertiaryColor': '#f1f5f9',
+    'nodeBorder': '#475569',
+    'clusterBkg': '#ffffff',
+    'clusterBorder': '#cbd5e1',
+    'titleColor': '#0f172a',
+    'edgeLabelBackground': '#ffffff',
+    'attributeBackgroundColorEven': '#f8fafc',
+    'attributeBackgroundColorOdd': '#ffffff',
+    'fontFamily': 'sans-serif'
+  }
+}}%%
 flowchart TD
     A[Student clicks Connect Google] --> B[Redirect to Google OAuth]
     B --> C[User Grants Classroom + Drive Permissions]
@@ -1206,117 +1316,6 @@ NoteNest-main/
 | 🔒 File Access Control | Strict ownership & permission checks before download |
 | 📧 Email Verification | Token-based verification before account activation |
 | 🔄 CSRF Awareness | Session-based action validation on sensitive operations |
-
----
-
-## 👥 Team & Contributions
-
-<div align="center">
-
-> 🎓 **Department of Computer Science & Engineering**
-> Final Year Project — Group Submission
-
-</div>
-
-### 🏆 Core Development Team
-
-| &nbsp; | Name | Student ID | GitHub | Role |
-|---|---|---|---|---|
-| 👑 | **Kamran Hasan** | 2022-2-60-077 | [@kkamranhasan](https://github.com/kkamranhasan) | 🏗️ Lead Developer & Architect |
-| 🎨 | **Natasa Tanjila Arshi** | 2023-3-60-387 | [@Natasha-Error203](https://github.com/Natasha-Error203) | Frontend Developer |
-| 🗄️ | **Umme Sumaya** | 2022-2-60-035 | [@Sumaya531](https://github.com/Sumaya531) | Database Engineer |
-| 🔗 | **Md Abdur Rahman** | 2023-3-60-024 | [@abdur-93](https://github.com/abdur-93) | Integration Specialist |
-| 🤖 | **Anika Binte Rashel** | 2022-3-60-336 | [@rayahkhondaker21-commits](https://github.com/rayahkhondaker21-commits) | AI / ML Engineer |
-| 🧪 | **MD. Yeasin Zaman Niyaj** | 2022-1-60-210 | [yeasinzaman.yz78](mailto:yeasinzaman.yz78@gmail.com) | QA & Documentation |
-
----
-
-### 📋 Individual Contributions
-
-<details>
-<summary><strong>👑 Kamran Hasan — Lead Developer & Architect</strong> (click to expand)</summary>
-
-> Primary developer and architect of the entire platform.
-
-| Area | Contribution |
-|---|---|
-| 🖥️ Backend Architecture | Designed and built the full PHP 8.x application structure from scratch |
-| 🗄️ Database Design | Architected all 26 MySQL tables, foreign key relationships, and migrations |
-| 🏫 Google Classroom API | Implemented OAuth 2.0 flow, full sync engine, assignment analysis, cron automation |
-| 🤖 AI Integration | Built the AI Tutor chat, AI Exam generator, evaluator, and study recommendations using Groq |
-| 🔍 Vector RAG | Set up ChromaDB Python microservice, embedding pipeline, and semantic search |
-| 📁 File System | Designed hierarchical folder tree, file upload, preview (PDF.js, Mammoth, SheetJS), sharing |
-| 📊 Analytics | Implemented heatmaps, exam score charts, and progress tracking with Chart.js |
-| 🎙️ Lecture Recorder | Built in-browser audio recorder with real-time waveform visualization |
-| 🔒 Security | Implemented all security layers: Bcrypt, prepared statements, XSS prevention, route guards |
-| 🐳 DevOps | Configured Docker, docker-compose, and InfinityFree free hosting deployment |
-
-</details>
-
-<details>
-<summary><strong>🎨 Natasa Tanjila Arshi — Frontend Developer</strong></summary>
-
-| Area | Contribution |
-|---|---|
-| 🎨 UI Review | Reviewed and gave feedback on UI/UX design across modules |
-| 📱 Responsiveness Testing | Tested mobile/tablet responsiveness across pages |
-| 🧪 Cross-browser Testing | Verified layout consistency across Chrome, Firefox, and Edge |
-| 📸 Screenshots | Captured and documented UI screenshots for project report |
-| 📝 Project Report | Contributed to the Frontend Design section of the FYP report |
-
-</details>
-
-<details>
-<summary><strong>🗄️ Umme Sumaya — Database Engineer</strong></summary>
-
-| Area | Contribution |
-|---|---|
-| 📋 ER Diagram | Prepared the Entity Relationship Diagram for the project report |
-| 🗄️ Schema Documentation | Documented all 26 tables with descriptions for the report |
-| 🔎 Query Review | Reviewed key SQL queries for correctness |
-| 📝 Project Report | Contributed to the Database Design section of the FYP report |
-| 🧪 DB Testing | Tested database integrity by inserting and verifying sample data |
-
-</details>
-
-<details>
-<summary><strong>🔗 Md Abdur Rahman — Integration Specialist</strong></summary>
-
-| Area | Contribution |
-|---|---|
-| 🏫 GC API Research | Researched Google Classroom API endpoints and OAuth 2.0 flow documentation |
-| ⚙️ Config Setup | Helped configure Google Cloud Console project and API credentials |
-| 🔄 Sync Testing | Tested Google Classroom sync with real classroom data |
-| 📝 Project Report | Contributed to the Google Classroom Integration section of the FYP report |
-| 📅 Calendar Testing | Verified calendar event population from assignment due dates |
-
-</details>
-
-<details>
-<summary><strong>🤖 Anika Binte Rashel — AI / ML Engineer</strong></summary>
-
-| Area | Contribution |
-|---|---|
-| 🤖 AI Research | Researched Groq API, Llama model capabilities, and prompt engineering strategies |
-| 📝 Prompt Design | Assisted in designing exam generation and AI tutor prompt templates |
-| 🧪 AI Testing | Tested AI Tutor and AI Exam responses for accuracy and quality |
-| 📊 Evaluation | Evaluated AI exam scoring output and documented feedback quality |
-| 📝 Project Report | Contributed to the AI Features section of the FYP report |
-
-</details>
-
-<details>
-<summary><strong>🧪 MD. Yeasin Zaman Niyaj — QA & Documentation</strong></summary>
-
-| Area | Contribution |
-|---|---|
-| 📋 README | Contributed to project README structure and documentation layout |
-| 🧪 Manual QA | Performed manual testing of registration, login, and file upload flows |
-| 🐛 Bug Reporting | Identified and reported UI bugs and form validation issues |
-| 📝 Project Report | Contributed to the Introduction and Abstract sections of the FYP report |
-| 🚀 Deployment | Assisted with InfinityFree deployment setup and testing |
-
-</details>
 
 ---
 
