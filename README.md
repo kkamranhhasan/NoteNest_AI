@@ -241,6 +241,8 @@ sequenceDiagram
 
 ### Entity Relationship Diagram
 
+> 📊 Full ER diagram covering all **26 database tables** and their relationships.
+
 ```mermaid
 erDiagram
     USERS {
@@ -248,46 +250,143 @@ erDiagram
         varchar name
         varchar email
         varchar password
-        varchar avatar
+        varchar phone
+        enum gender
+        varchar photo
         tinyint is_verified
+        varchar verification_token
+        datetime created_at
+    }
+    NOTIFICATIONS {
+        int id PK
+        int user_id FK
+        text message
+        tinyint is_read
         datetime created_at
     }
     COURSES {
         int id PK
         int user_id FK
-        varchar title
+        varchar name
+        varchar code
         text description
+        varchar color
+        datetime created_at
+    }
+    FOLDERS {
+        int id PK
+        varchar name
+        int owner_id FK
+        int course_id FK
+        tinyint is_course_root
+        tinyint is_shared
+        int parent_folder_id FK
         datetime created_at
     }
     COURSE_TOPICS {
         int id PK
         int course_id FK
+        int folder_id FK
         varchar title
-        int order_index
-    }
-    FOLDERS {
-        int id PK
-        int user_id FK
-        int parent_id FK
-        varchar name
+        int week_no
+        int sort_order
         datetime created_at
     }
     FILES {
         int id PK
-        int user_id FK
         int folder_id FK
-        varchar original_name
-        varchar stored_name
+        int owner_id FK
+        int course_id FK
+        varchar name
+        varchar file_path
         varchar mime_type
-        bigint file_size
-        datetime uploaded_at
+        tinyint is_shared
+        datetime created_at
+    }
+    FILE_COURSE_TAGS {
+        int id PK
+        int file_id FK
+        int course_id FK
+        int topic_id FK
+        datetime tagged_at
+    }
+    SHARED_ACCESS {
+        int id PK
+        enum item_type
+        int item_id
+        int shared_with_user_id FK
+        tinyint can_edit
+        enum permission_type
+        varchar share_token
+        datetime expires_at
+        datetime created_at
     }
     FAVORITES {
         int id PK
         int user_id FK
-        varchar item_type
+        enum item_type
         int item_id
         datetime created_at
+    }
+    TODOS {
+        int id PK
+        int user_id FK
+        varchar title
+        datetime event_datetime
+        text details
+        enum status
+        enum priority
+        enum task_type
+        int course_id FK
+        datetime created_at
+    }
+    TODO_NOTIFICATIONS {
+        int id PK
+        int todo_id FK
+        datetime notified_at
+    }
+    AI_CHAT_HISTORY {
+        int id PK
+        int user_id FK
+        varchar session_id
+        enum role
+        text message
+        enum interaction_type
+        int course_id FK
+        int tokens_used
+        datetime created_at
+    }
+    AI_EVALUATIONS {
+        int id PK
+        int user_id FK
+        int file_id FK
+        int course_id FK
+        longtext questions_json
+        longtext user_answers
+        decimal score
+        int max_score
+        longtext feedback
+        text weak_areas
+        enum status
+        datetime created_at
+        datetime evaluated_at
+    }
+    USER_PROGRESS {
+        int id PK
+        int user_id FK
+        int course_id FK
+        enum event_type
+        varchar event_detail
+        datetime created_at
+    }
+    LECTURE_RECORDINGS {
+        int id PK
+        int user_id FK
+        int course_id FK
+        varchar title
+        varchar file_path
+        int duration_seconds
+        datetime recorded_at
     }
     GOOGLE_ACCOUNTS {
         int id PK
@@ -296,58 +395,171 @@ erDiagram
         text access_token
         text refresh_token
         datetime token_expiry
+        datetime connected_at
     }
-    AI_CHAT_HISTORY {
+    GOOGLE_COURSES {
         int id PK
         int user_id FK
-        varchar session_id
-        varchar role
-        text content
+        varchar gc_course_id
+        varchar name
+        varchar section
+        varchar room
+        varchar enrollment_code
+        varchar course_state
+        datetime synced_at
+    }
+    GOOGLE_TOPICS {
+        int id PK
+        int google_course_id FK
+        varchar gc_topic_id
+        varchar name
+        datetime synced_at
+    }
+    GOOGLE_FILES {
+        int id PK
+        int google_course_id FK
+        int local_file_id FK
+        varchar gc_material_id
+        varchar title
+        varchar drive_file_id
+        varchar mime_type
+        datetime synced_at
+    }
+    GOOGLE_ASSIGNMENTS {
+        int id PK
+        int google_course_id FK
+        varchar gc_coursework_id
+        varchar title
+        text description
+        datetime due_date
+        int max_points
+        text ai_analysis
+        decimal difficulty_score
+        datetime synced_at
+    }
+    GOOGLE_SYNC_LOGS {
+        int id PK
+        int user_id FK
+        int google_course_id FK
+        enum sync_type
+        enum status
+        text message
+        int items_synced
+        datetime started_at
+        datetime completed_at
+    }
+    CALENDAR_EVENTS {
+        int id PK
+        int user_id FK
+        varchar title
+        text description
+        datetime event_date
+        enum event_type
+        int source_id
+        varchar source_table
         datetime created_at
     }
-    AI_EVALUATIONS {
+    DOCUMENT_CHUNKS {
+        int id PK
+        int file_id FK
+        int user_id FK
+        int chunk_index
+        mediumtext content
+        varchar embedding_id
+        datetime created_at
+    }
+    EMBEDDING_JOBS {
+        int id PK
+        int file_id FK
+        enum status
+        text error_message
+        int attempts
+        datetime created_at
+        datetime updated_at
+    }
+    VECTOR_INDEX {
+        int id PK
+        varchar embedding_id
+        int file_id FK
+        int chunk_id FK
+        int user_id FK
+        int course_id FK
+        int folder_id FK
+        int topic_id FK
+        datetime created_at
+    }
+    AI_QUERY_LOGS {
         int id PK
         int user_id FK
-        varchar exam_title
-        int total_questions
-        decimal score_percent
-        text feedback_json
-        datetime submitted_at
+        text query
+        text response
+        int course_id FK
+        int folder_id FK
+        int topic_id FK
+        datetime created_at
     }
 
+    USERS ||--o{ NOTIFICATIONS : "receives"
     USERS ||--o{ COURSES : "creates"
     USERS ||--o{ FOLDERS : "owns"
     USERS ||--o{ FILES : "uploads"
     USERS ||--o{ FAVORITES : "stars"
+    USERS ||--o{ TODOS : "manages"
     USERS ||--|| GOOGLE_ACCOUNTS : "connects"
     USERS ||--o{ AI_CHAT_HISTORY : "chats"
     USERS ||--o{ AI_EVALUATIONS : "takes"
+    USERS ||--o{ USER_PROGRESS : "logs"
+    USERS ||--o{ LECTURE_RECORDINGS : "records"
+    USERS ||--o{ CALENDAR_EVENTS : "has"
+    USERS ||--o{ GOOGLE_SYNC_LOGS : "triggers"
+    USERS ||--o{ AI_QUERY_LOGS : "queries"
+    USERS ||--o{ VECTOR_INDEX : "indexes"
     COURSES ||--o{ COURSE_TOPICS : "has"
     FOLDERS ||--o{ FILES : "contains"
     FOLDERS ||--o{ FOLDERS : "nests"
+    FILES ||--o{ FILE_COURSE_TAGS : "tagged"
+    FILES ||--o{ DOCUMENT_CHUNKS : "chunked"
+    FILES ||--|| EMBEDDING_JOBS : "embedded"
+    TODOS ||--o{ TODO_NOTIFICATIONS : "triggers"
+    GOOGLE_ACCOUNTS ||--o{ GOOGLE_COURSES : "syncs"
+    GOOGLE_COURSES ||--o{ GOOGLE_TOPICS : "has"
+    GOOGLE_COURSES ||--o{ GOOGLE_FILES : "contains"
+    GOOGLE_COURSES ||--o{ GOOGLE_ASSIGNMENTS : "has"
+    GOOGLE_COURSES ||--o{ GOOGLE_SYNC_LOGS : "logged"
+    GOOGLE_FILES ||--o{ FILES : "linked"
+    DOCUMENT_CHUNKS ||--o{ VECTOR_INDEX : "indexed"
 ```
 
-### Database Schema Summary
+### Database Schema Summary — All 26 Tables
 
-| Table | Description |
-|---|---|
-| `users` | Credentials, avatar, verification status |
-| `courses` | Manual course records per user |
-| `course_topics` | Syllabus sections within courses |
-| `folders` | Hierarchical folder tree |
-| `files` | Uploaded document metadata & paths |
-| `favorites` | Starred files and folders |
-| `shared_access` | File/folder permission grants |
-| `google_accounts` | Google OAuth tokens per user |
-| `google_courses` | Synced Google Classroom courses |
-| `google_topics` | Classroom topic modules |
-| `google_files` | Classroom attachments |
-| `google_assignments` | Coursework + AI analysis data |
-| `google_sync_logs` | Audit trail of sync events |
-| `todos` | User tasks with priorities |
-| `ai_chat_history` | AI Tutor conversation logs |
-| `ai_evaluations` | Exam scores and AI feedback |
-| `user_progress` | Activity log for heatmaps |
+| # | Table | Category | Description |
+|---|---|---|---|
+| 1 | `users` | 👤 Core | Credentials, avatar, gender, email verification |
+| 2 | `notifications` | 🔔 Core | System notifications per user |
+| 3 | `courses` | 📘 Academic | Manual course records with code and color |
+| 4 | `folders` | 📁 Storage | Hierarchical folder tree with course linking |
+| 5 | `course_topics` | 📑 Academic | Syllabus topics with week numbers and sort order |
+| 6 | `files` | 📄 Storage | Uploaded document metadata, paths, and mime types |
+| 7 | `file_course_tags` | 🏷️ Storage | Many-to-many file ↔ course + topic tagging |
+| 8 | `shared_access` | 🔗 Sharing | File/folder permission grants with expiry |
+| 9 | `favorites` | ⭐ UX | Starred files and folders per user |
+| 10 | `todos` | ✅ Tasks | Task checklist with priority, type and due dates |
+| 11 | `todo_notifications` | 🔔 Tasks | Reminder delivery log for todo items |
+| 12 | `ai_chat_history` | 🤖 AI | Persistent AI Tutor session conversation logs |
+| 13 | `ai_evaluations` | 📝 AI | Exam questions, answers, scores, and AI feedback |
+| 14 | `user_progress` | 📊 Analytics | Activity event log for heatmaps and insights |
+| 15 | `lecture_recordings` | 🎙️ Media | Audio lecture metadata, paths, and duration |
+| 16 | `google_accounts` | 🔑 Google | OAuth 2.0 tokens and connected Google email |
+| 17 | `google_courses` | 🏫 Google | Synced Google Classroom course metadata |
+| 18 | `google_topics` | 📋 Google | Classroom topic/section modules |
+| 19 | `google_files` | 📎 Google | Classroom attachments linked to local files |
+| 20 | `google_assignments` | 📝 Google | Coursework with due dates and AI difficulty analysis |
+| 21 | `google_sync_logs` | 🔄 Google | Audit trail of all sync executions and status |
+| 22 | `calendar_events` | 📅 Planning | Aggregated events from todos and assignments |
+| 23 | `document_chunks` | 🔍 Vector | Text chunks extracted from uploaded documents |
+| 24 | `embedding_jobs` | ⚙️ Vector | Queue for document embedding processing jobs |
+| 25 | `vector_index` | 🧮 Vector | Mapping of embedding IDs to files and chunks |
+| 26 | `ai_query_logs` | 📋 AI | Semantic search query and response audit log |
 
 ---
 
@@ -642,6 +854,174 @@ Access at: `http://localhost:8080/login.php`
 
 ---
 
+## 🌐 InfinityFree Deployment Guide (Free Hosting)
+
+> ☁️ Deploy NoteNest AI online for **free** using [InfinityFree](https://infinityfree.net/) — no credit card required.
+
+### ⚠️ InfinityFree Limitations to Note
+
+| Limitation | Detail |
+|---|---|
+| ❌ No SSH / Terminal | File management via File Manager or FTP only |
+| ❌ No Cron Jobs (free tier) | Automated background sync not available |
+| ❌ No Python / ChromaDB | RAG vector search feature disabled |
+| ✅ PHP 8.x supported | Full PHP backend works |
+| ✅ MySQL supported | Full database works via phpMyAdmin |
+| ✅ Free subdomain | e.g. `yoursite.infinityfreeapp.com` |
+| ✅ 5 GB disk space | Sufficient for note storage |
+
+---
+
+### Step 1 — Create a Free InfinityFree Account
+
+1. Go to [infinityfree.net](https://infinityfree.net/) and click **Register**
+2. Verify your email and log in to the dashboard
+3. Click **Create Account** → Choose a free subdomain (e.g. `notenest`)
+4. Note your **FTP credentials** (hostname, username, password) shown after account creation
+
+---
+
+### Step 2 — Create the MySQL Database
+
+1. In your InfinityFree control panel, go to **MySQL Databases**
+2. Click **Create Database** — note the auto-generated:
+   - 📌 Database name (e.g. `epiz_12345678_notenest`)
+   - 📌 Database username
+   - 📌 Database password
+   - 📌 MySQL hostname (e.g. `sql123.infinityfree.com`)
+3. Click **phpMyAdmin** → select your database → click **Import**
+4. Upload `database.sql` → click **Go**
+5. Repeat for `migration_add_missing_tables.sql`
+
+---
+
+### Step 3 — Configure config.php for InfinityFree
+
+Update your `config.php` with InfinityFree database credentials:
+
+```php
+// ── Database (InfinityFree values) ─────────────────────────
+define('DB_SERVER',   'sql123.infinityfree.com');  // Your MySQL hostname
+define('DB_USERNAME', 'epiz_12345678');             // Your DB username
+define('DB_PASSWORD', 'your_db_password');          // Your DB password
+define('DB_NAME',     'epiz_12345678_notenest');    // Your DB name
+
+// ── App URL ────────────────────────────────────────────────
+define('APP_URL', 'https://notenest.infinityfreeapp.com');
+
+// ── Groq AI ────────────────────────────────────────────────
+define('GROQ_API_KEY', 'gsk_your_groq_api_key_here');
+define('GROQ_MODEL',   'llama-3.3-70b-versatile');
+
+// ── Gmail SMTP ─────────────────────────────────────────────
+define('MAIL_USERNAME', 'your_email@gmail.com');
+define('MAIL_PASSWORD', 'your_16char_app_password');
+
+// ── Google OAuth 2.0 ───────────────────────────────────────
+define('GOOGLE_CLIENT_ID',     'your_client_id.apps.googleusercontent.com');
+define('GOOGLE_CLIENT_SECRET', 'your_client_secret');
+```
+
+> ⚠️ Also update your Google Cloud Console redirect URI to:
+> `https://notenest.infinityfreeapp.com/google_callback.php`
+
+---
+
+### Step 4 — Upload Files via FTP
+
+**Option A — FileZilla (Recommended)**
+
+1. Download [FileZilla](https://filezilla-project.org/) (free)
+2. Open FileZilla → File → Site Manager → New Site
+3. Enter your InfinityFree FTP credentials:
+   ```
+   Host:     ftpupload.net
+   Port:     21
+   Protocol: FTP
+   User:     epiz_12345678
+   Password: your_ftp_password
+   ```
+4. Connect and navigate to `htdocs/` on the remote side
+5. Drag and drop all project files (except `vendor/`, `node_modules/`, `.git/`)
+
+**Option B — InfinityFree Online File Manager**
+
+1. In the control panel go to **Files → Online File Manager**
+2. Navigate to `htdocs/`
+3. Create a folder `NoteNest` and upload files one-by-one or as a ZIP
+4. If uploading as ZIP: upload → right-click → **Extract**
+
+---
+
+### Step 5 — Upload Vendor Dependencies
+
+Since InfinityFree has no Composer, install locally first and upload:
+
+```bash
+# Run locally before uploading
+composer install --no-dev --optimize-autoloader
+```
+
+Then upload the entire `vendor/` folder via FTP.
+
+---
+
+### Step 6 — Set Correct File Permissions
+
+In the **File Manager**, right-click the following folders and set permissions to **755**:
+
+```
+htdocs/NoteNest/uploads/        → 755
+htdocs/NoteNest/uploads/notes/  → 755
+htdocs/NoteNest/img/            → 755
+```
+
+> ℹ️ InfinityFree uses `755` (not `777`) for write permissions.
+
+---
+
+### Step 7 — Configure .htaccess
+
+Ensure the project root `.htaccess` exists. If you encounter 500 errors, simplify it:
+
+```apache
+Options -Indexes
+DirectoryIndex index.php login.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+</IfModule>
+```
+
+---
+
+### Step 8 — Test the Deployment
+
+1. Visit `https://yoursite.infinityfreeapp.com/login.php`
+2. Register a new account
+3. Verify email (ensure Gmail SMTP credentials are correct)
+4. Test file upload, course creation, and AI Tutor
+
+### 🚀 InfinityFree Deployment Checklist
+
+```
+☐ InfinityFree account created
+☐ MySQL database created and credentials noted
+☐ database.sql imported via phpMyAdmin
+☐ migration_add_missing_tables.sql imported
+☐ config.php updated with InfinityFree DB credentials
+☐ config.php APP_URL updated to InfinityFree subdomain
+☐ Google OAuth redirect URI updated in Google Cloud Console
+☐ All PHP files uploaded via FTP (except .git, node_modules)
+☐ vendor/ folder uploaded
+☐ uploads/ and img/ folder permissions set to 755
+☐ .htaccess is present and correct
+☐ Login page loads at https://yoursite.infinityfreeapp.com/login.php
+```
+
+---
+
 ## 📂 Project Structure
 
 ```
@@ -739,13 +1119,14 @@ NoteNest-main/
 
 ## 👥 Team Members
 
-| Name | Role | Responsibilities |
-|---|---|---|
-| **Kamran Hasan** | 🏗️ Lead Developer & Architect | Full-stack PHP, Google Classroom API, AI Integration, Database Design |
-| Member 2 | 🎨 Frontend Developer | UI/UX Design, Bootstrap, JavaScript, AJAX interactions |
-| Member 3 | 🤖 AI / ML Engineer | Groq API integration, Prompt Engineering, ChromaDB RAG, Exam System |
-
-> ✏️ Update this table with your actual team member names and roles before submission.
+| Name | Student ID | Role | Responsibilities |
+|---|---|---|---|
+| **Kamran Hasan** | 2022-2-60-077 | 🏗️ Lead Developer & Architect | Full-stack PHP, Google Classroom API, AI Integration, Database Design |
+| **Natasa Tanjila Arshi** | 2023-3-60-387 | 🎨 Frontend Developer | UI/UX Design, Bootstrap 5, JavaScript, AJAX |
+| **Umme Sumaya** | 2022-2-60-035 | 🗄️ Database Engineer | Database design, SQL schema, query optimization |
+| **Md Abdur Rahman** | 2023-3-60-024 | 🔗 Integration Specialist | Google OAuth, Classroom API sync, cron jobs |
+| **Anika Binte Rashel** | 2022-3-60-336 | 🤖 AI / ML Engineer | Groq API, Prompt Engineering, ChromaDB RAG, Exam System |
+| **MD. Yeasin Zaman Niyaj** | 2022-1-60-210 | 🧪 QA & Documentation | Testing, documentation, deployment, analytics |
 
 ---
 
@@ -772,10 +1153,11 @@ NoteNest-main/
 | Metric | Value |
 |---|---|
 | 🧩 Total Modules | 11+ |
-| 🗄️ Database Tables | 17+ |
+| 🗄️ Database Tables | **26** |
 | 📄 PHP Files | 50+ |
 | 🤖 AI Model | Llama 3.3 70B (Groq) |
 | 🔗 External APIs | 3 (Groq, Google Classroom, Google Drive) |
+| ☁️ Free Hosting | InfinityFree (PHP + MySQL) |
 | 🎓 Project Type | University Final Year Project |
 
 </div>
