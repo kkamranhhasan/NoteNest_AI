@@ -1292,7 +1292,7 @@ NoteNest-main/
 
 > 🎓 **Department of Computer Science & Engineering, East West University**
 > Course: Software Engineering (CSE412)
-> Group Submission
+
 
 </div>
 
