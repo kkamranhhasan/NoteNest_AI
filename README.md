@@ -35,6 +35,9 @@
 
 <!-- LIVE DEMO BUTTON -->
 [![🌐 Live Demo](https://img.shields.io/badge/🌐_LIVE_DEMO-notenest--ai.ct.ws-0ea5e9?style=for-the-badge)](https://notenest-ai.ct.ws/login.php)
+[![Watch Demo](https://img.shields.io/badge/▶_Watch_Demo-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/dPQg-9itxqM)
+
+> 🎥 Click the **Watch Demo** badge above to watch a full walkthrough of NoteNest AI's features.
 
 <br/>
 
@@ -1322,19 +1325,7 @@ NoteNest-main/
 └── 📁 embeddings/                      — Vector embedding cache
 ```
 
----
 
-## 🎬 Demo Video
-
-<div align="center">
-
-[![Watch Demo](https://img.shields.io/badge/▶_Watch_Demo-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/dPQg-9itxqM)
-
-> 🎥 Click the badge above to watch a full walkthrough of NoteNest AI's features.
-
-</div>
-
----
 
 ## 🔒 Security Measures
 
