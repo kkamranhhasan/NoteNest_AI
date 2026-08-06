@@ -26,7 +26,7 @@
 
 <!-- STATUS BADGES -->
 [![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)]()
-[![FYP](https://img.shields.io/badge/Final%20Year%20Project-CSE-f97316?style=flat-square)]()
+[![Academic Project](https://img.shields.io/badge/Academic%20Project-CSE-f97316?style=flat-square)]()
 [![DB Tables](https://img.shields.io/badge/Database%20Tables-26-6366f1?style=flat-square)]()
 [![Modules](https://img.shields.io/badge/Modules-11%2B-0ea5e9?style=flat-square)]()
 [![Free Hosting](https://img.shields.io/badge/Free%20Hosting-InfinityFree-22c55e?style=flat-square)](https://infinityfree.net)
