@@ -1328,7 +1328,7 @@ NoteNest-main/
 
 <div align="center">
 
-[![Watch Demo](https://img.shields.io/badge/▶_Watch_Demo-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtube-link.com)
+[![Watch Demo](https://img.shields.io/badge/▶_Watch_Demo-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/dPQg-9itxqM)
 
 > 🎥 Click the badge above to watch a full walkthrough of NoteNest AI's features.
 
